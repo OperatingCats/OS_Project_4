@@ -1,0 +1,6 @@
+code/build/
+code/bin/
+code/data/runtime/*.csv
+/tmp/blockchain_*/
+*.o
+*.log
