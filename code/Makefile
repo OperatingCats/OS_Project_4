@@ -1,33 +1,31 @@
-# Makefile for the multi-process Blockchain project
-# Initial skeleton: to be completed progressively.
+CC := gcc
 
-CC      := gcc
-CFLAGS  := -Wall -Wextra -std=gnu11 -pthread
-LDFLAGS := -pthread
-LDLIBS  := -lssl -lcrypto
+CPPFLAGS := -Iinclude -Ithird_party/sha256
+CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror
+LDLIBS :=
 
 BUILD_DIR := build
-BIN_DIR   := bin
+BIN_DIR := bin
 
-.PHONY: build run clean test debug sanitize demo
+CRYPTO_TEST := $(BIN_DIR)/test_crypto
 
-build:
-	@echo "TODO: compile bootstrap, node, miner, client into $(BIN_DIR)/"
+CRYPTO_TEST_SOURCES := \
+	common/errors.c \
+	common/crypto.c \
+	third_party/sha256/sha256.c \
+	tests/test_crypto.c
 
-run:
-	@echo "TODO: launch ./$(BIN_DIR)/bootstrap with default parameters"
+.PHONY: build test clean
+
+build: $(CRYPTO_TEST)
+
+$(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(CRYPTO_TEST_SOURCES) \
+		-o $(CRYPTO_TEST) $(LDLIBS)
+
+test: build
+	./$(CRYPTO_TEST)
 
 clean:
-	@echo "TODO: remove $(BUILD_DIR)/ and $(BIN_DIR)/"
-
-test:
-	@echo "TODO: run tests/run_all_tests.sh"
-
-debug:
-	@echo "TODO: build with debug symbols (-g -O0)"
-
-sanitize:
-	@echo "TODO: build with -fsanitize=address,undefined"
-
-demo:
-	@echo "TODO: run scripts/demo.sh"
+	rm -rf $(BUILD_DIR) $(BIN_DIR)
