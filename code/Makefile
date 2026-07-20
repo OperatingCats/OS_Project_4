@@ -10,6 +10,8 @@ CRYPTO_TEST := $(BIN_DIR)/test_crypto
 BLOCK_TEST := $(BIN_DIR)/test_block
 MERKLE_TEST := $(BIN_DIR)/test_merkle
 VALIDATION_TEST := $(BIN_DIR)/test_validation
+BLOCK_HASH_TEST := $(BIN_DIR)/test_block_hash
+BLOCK_VALIDATION_TEST := $(BIN_DIR)/test_block_validation
 
 CRYPTO_TEST_SOURCES := \
 	common/errors.c \
@@ -32,12 +34,35 @@ MERKLE_TEST_SOURCES := \
 
 VALIDATION_TEST_SOURCES := \
 	common/errors.c \
+	common/block.c \
+	common/crypto.c \
 	common/validation.c \
+	third_party/sha256/sha256.c \
 	tests/test_validation.c
+
+BLOCK_HASH_TEST_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/crypto.c \
+	third_party/sha256/sha256.c \
+	tests/test_block_hash.c
+
+BLOCK_VALIDATION_TEST_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/crypto.c \
+	common/validation.c \
+	third_party/sha256/sha256.c \
+	tests/test_block_validation.c
 
 .PHONY: build test clean
 
-build: $(CRYPTO_TEST) $(BLOCK_TEST) $(MERKLE_TEST) $(VALIDATION_TEST)
+build: $(CRYPTO_TEST) \
+	$(BLOCK_TEST) \
+	$(MERKLE_TEST) \
+	$(VALIDATION_TEST) \
+	$(BLOCK_HASH_TEST) \
+	$(BLOCK_VALIDATION_TEST)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
@@ -59,11 +84,23 @@ $(VALIDATION_TEST): $(VALIDATION_TEST_SOURCES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(VALIDATION_TEST_SOURCES) \
 		-o $(VALIDATION_TEST)
 
+$(BLOCK_HASH_TEST): $(BLOCK_HASH_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_HASH_TEST_SOURCES) \
+		-o $(BLOCK_HASH_TEST)
+
+$(BLOCK_VALIDATION_TEST): $(BLOCK_VALIDATION_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_VALIDATION_TEST_SOURCES) \
+		-o $(BLOCK_VALIDATION_TEST)
+
 test: build
 	./$(CRYPTO_TEST)
 	./$(BLOCK_TEST)
 	./$(MERKLE_TEST)
 	./$(VALIDATION_TEST)
+	./$(BLOCK_HASH_TEST)
+	./$(BLOCK_VALIDATION_TEST)
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
