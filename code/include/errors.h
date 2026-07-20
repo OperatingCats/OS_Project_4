@@ -18,7 +18,12 @@ typedef enum {
 
     ERR_CRYPTO,
     ERR_SERIALIZATION,
-    ERR_NOT_FOUND
+    ERR_NOT_FOUND,
+
+    ERR_IPC,
+    ERR_TIMEOUT,
+    ERR_PROCESS,
+    ERR_ALREADY_EXISTS
 } project_error_t;
 
 const char *project_error_string(project_error_t error);
