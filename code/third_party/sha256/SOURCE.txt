@@ -1,0 +1,15 @@
+SHA-256 implementation
+
+Original author: Brad Conte
+Original project: B-Con/crypto-algorithms
+Source files:
+- sha256.c
+- sha256.h
+
+Original repository:
+https://github.com/B-Con/crypto-algorithms
+
+These files are included as a third-party dependency and were not written
+by the members of this project group.
+
+Downloaded for use in the Operating Systems laboratory project.
