@@ -10,6 +10,7 @@ CRYPTO_TEST := $(BIN_DIR)/test_crypto
 BLOCK_TEST := $(BIN_DIR)/test_block
 MERKLE_TEST := $(BIN_DIR)/test_merkle
 VALIDATION_TEST := $(BIN_DIR)/test_validation
+IPC_TEST := $(BIN_DIR)/test_ipc
 
 CRYPTO_TEST_SOURCES := \
 	common/errors.c \
@@ -35,9 +36,14 @@ VALIDATION_TEST_SOURCES := \
 	common/validation.c \
 	tests/test_validation.c
 
+IPC_TEST_SOURCES := \
+	common/errors.c \
+	common/ipc.c \
+	tests/test_ipc.c
+
 .PHONY: build test clean
 
-build: $(CRYPTO_TEST) $(BLOCK_TEST) $(MERKLE_TEST) $(VALIDATION_TEST)
+build: $(CRYPTO_TEST) $(BLOCK_TEST) $(MERKLE_TEST) $(VALIDATION_TEST) $(IPC_TEST)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
@@ -59,11 +65,17 @@ $(VALIDATION_TEST): $(VALIDATION_TEST_SOURCES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(VALIDATION_TEST_SOURCES) \
 		-o $(VALIDATION_TEST)
 
+$(IPC_TEST): $(IPC_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(IPC_TEST_SOURCES) \
+		-o $(IPC_TEST)
+
 test: build
 	./$(CRYPTO_TEST)
 	./$(BLOCK_TEST)
 	./$(MERKLE_TEST)
 	./$(VALIDATION_TEST)
+	./$(IPC_TEST)
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
