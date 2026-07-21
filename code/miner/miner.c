@@ -12,6 +12,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,48 @@ static void handle_termination_signal(int signum)
     if (g_state != NULL) {
         g_state->shutting_down = 1;
     }
+}
+
+static int open_log_file(miner_state_t *state)
+{
+    char log_path[600];
+    int written;
+
+    written = snprintf(
+        log_path,
+        sizeof(log_path),
+        "%s/%s/" LOG_FILE_FORMAT,
+        state->runtime_dir,
+        LOG_SUBDIR_NAME,
+        "miner",
+        (int)getpid()
+    );
+
+    if (written < 0 || (size_t)written >= sizeof(log_path)) {
+        return ERR_INVALID_ARGUMENT;
+    }
+
+    state->log_file = fopen(log_path, "w");
+
+    return (state->log_file != NULL) ? PROJECT_OK : ERR_FILE_OPEN;
+}
+
+static void miner_log(const miner_state_t *state, const char *format, ...)
+{
+    va_list args;
+
+    if (state->log_file == NULL) {
+        return;
+    }
+
+    fprintf(state->log_file, "[miner %d] ", state->miner_id);
+
+    va_start(args, format);
+    vfprintf(state->log_file, format, args);
+    va_end(args);
+
+    fprintf(state->log_file, "\n");
+    fflush(state->log_file);
 }
 
 static int query_node(
@@ -129,6 +172,8 @@ static void resync_from_node(miner_state_t *state)
         state->restart_mining = 1;
         pthread_cond_broadcast(&state->coordination_cond);
         pthread_mutex_unlock(&state->coordination_lock);
+
+        miner_log(state, "resynced with node 0: chain is empty, mining index 0");
         return;
     }
 
@@ -188,6 +233,12 @@ static void resync_from_node(miner_state_t *state)
         pthread_cond_broadcast(&state->coordination_cond);
         pthread_mutex_unlock(&state->coordination_lock);
 
+        miner_log(
+            state,
+            "resynced with node 0: next_index=%llu",
+            (unsigned long long)(last_block.index + 1)
+        );
+
         block_destroy(&last_block);
     }
 }
@@ -217,6 +268,7 @@ static void handle_tx_submit(
     result = validate_transaction(transaction);
 
     if (result != PROJECT_OK) {
+        miner_log(state, "rejected transaction (invalid format): %s", transaction);
         snprintf(
             reply,
             sizeof(reply),
@@ -237,6 +289,7 @@ static void handle_tx_submit(
     result = mempool_add(&state->mempool, transaction);
 
     if (result != PROJECT_OK) {
+        miner_log(state, "rejected transaction (mempool full): %s", transaction);
         snprintf(
             reply,
             sizeof(reply),
@@ -254,6 +307,7 @@ static void handle_tx_submit(
         return;
     }
 
+    miner_log(state, "accepted transaction: %s", transaction);
     ipc_send(client_fd, MSG_TX_ACK, (uint32_t)state->miner_id, "OK", 2);
 
     pthread_mutex_lock(&state->coordination_lock);
@@ -309,9 +363,22 @@ static void handle_block_commit(
         memcpy(state->previous_hash, hash, sizeof(state->previous_hash));
         state->restart_mining = 1;
         pthread_cond_broadcast(&state->coordination_cond);
-    }
+        pthread_mutex_unlock(&state->coordination_lock);
 
-    pthread_mutex_unlock(&state->coordination_lock);
+        miner_log(
+            state,
+            "block committed: index=%llu, chain advanced",
+            (unsigned long long)block.index
+        );
+    } else {
+        pthread_mutex_unlock(&state->coordination_lock);
+
+        miner_log(
+            state,
+            "ignored old/duplicate block commit: index=%llu",
+            (unsigned long long)block.index
+        );
+    }
 
     block_destroy(&block);
 }
@@ -335,10 +402,12 @@ static void handle_message(
         case MSG_BLOCK_REJECT:
             /* Our worldview might be stale relative to Node 0's; find
              * out where it actually is. */
+            miner_log(state, "proposal rejected by node 0; resyncing");
             resync_from_node(state);
             break;
 
         case MSG_SHUTDOWN:
+            miner_log(state, "shutdown requested by bootstrap");
             state->shutting_down = 1;
             break;
 
@@ -486,9 +555,20 @@ static void propose_block(miner_state_t *state, const block_t *block)
     }
 
     if (ipc_connect(sock_path, &fd) != PROJECT_OK) {
+        miner_log(
+            state,
+            "block mined (index=%llu) but node 0 is unreachable",
+            (unsigned long long)block->index
+        );
         free(line);
         return;
     }
+
+    miner_log(
+        state,
+        "block mined: index=%llu, proposing to node 0",
+        (unsigned long long)block->index
+    );
 
     ipc_send(
         fd,
@@ -570,6 +650,13 @@ static void *mining_thread_main(void *arg)
             continue;
         }
 
+        miner_log(
+            state,
+            "mining attempt: index=%llu, %zu transaction(s)",
+            (unsigned long long)candidate_index,
+            batch_count
+        );
+
         candidate.index = candidate_index;
         candidate.timestamp = (uint64_t)time(NULL);
         candidate.nonce = (uint64_t)rand();
@@ -606,6 +693,7 @@ static void *mining_thread_main(void *arg)
         aborted = wait_or_abort(state, sleep_seconds);
 
         if (aborted) {
+            miner_log(state, "mining attempt aborted (chain advanced)");
             block_destroy(&candidate);
             continue;
         }
@@ -651,6 +739,16 @@ int main(int argc, char *argv[])
     memset(state.previous_hash, '0', SHA256_HEX_LENGTH);
     state.previous_hash[SHA256_HEX_LENGTH] = '\0';
     state.next_index = 0;
+
+    if (open_log_file(&state) != PROJECT_OK) {
+        fprintf(
+            stderr,
+            "miner %d: could not open log file, continuing without one\n",
+            state.miner_id
+        );
+    }
+
+    miner_log(&state, "started (difficulty=%d)", state.difficulty);
 
     if (mempool_init(&state.mempool) != PROJECT_OK) {
         fprintf(
@@ -714,9 +812,15 @@ int main(int argc, char *argv[])
 
     pthread_join(mining_thread, NULL);
 
+    miner_log(&state, "shut down");
+
     mempool_destroy(&state.mempool);
     pthread_mutex_destroy(&state.coordination_lock);
     pthread_cond_destroy(&state.coordination_cond);
+
+    if (state.log_file != NULL) {
+        fclose(state.log_file);
+    }
 
     return EXIT_SUCCESS;
 }

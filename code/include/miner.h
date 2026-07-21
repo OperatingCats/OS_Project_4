@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "block.h"
 
@@ -48,6 +49,10 @@ typedef struct {
     int miner_id;
     char runtime_dir[256];
     int difficulty;
+
+    /* logs/miner-<pid>.log, opened once at startup. NULL if it could
+     * not be opened, in which case logging is silently skipped. */
+    FILE *log_file;
 
     mempool_t mempool;
 
