@@ -62,12 +62,34 @@ static int open_log_file(miner_state_t *state)
 static void miner_log(const miner_state_t *state, const char *format, ...)
 {
     va_list args;
+    struct timespec now;
+    struct tm local_time;
+    char timestamp[32];
 
     if (state->log_file == NULL) {
         return;
     }
 
-    fprintf(state->log_file, "[miner %d] ", state->miner_id);
+    clock_gettime(CLOCK_REALTIME, &now);
+
+    if (localtime_r(&now.tv_sec, &local_time) != NULL) {
+        strftime(
+            timestamp,
+            sizeof(timestamp),
+            "%Y-%m-%d %H:%M:%S",
+            &local_time
+        );
+    } else {
+        snprintf(timestamp, sizeof(timestamp), "unknown-time");
+    }
+
+    fprintf(
+        state->log_file,
+        "[%s.%03ld] miner %d: ",
+        timestamp,
+        now.tv_nsec / 1000000,
+        state->miner_id
+    );
 
     va_start(args, format);
     vfprintf(state->log_file, format, args);
