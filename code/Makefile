@@ -15,6 +15,8 @@ BLOCK_VALIDATION_TEST := $(BIN_DIR)/test_block_validation
 IPC_TEST := $(BIN_DIR)/test_ipc
 BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
 BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
+BOOTSTRAP_BIN := $(BIN_DIR)/blockchain
+MINER_BIN := $(BIN_DIR)/miner
 
 CRYPTO_TEST_SOURCES := \
 	common/errors.c \
@@ -79,7 +81,23 @@ BLOCKCHAIN_TEST_SOURCES := \
 	third_party/sha256/sha256.c \
 	tests/test_blockchain.c
 
-.PHONY: build test clean
+BOOTSTRAP_SOURCES := \
+	common/errors.c \
+	common/ipc.c \
+	common/process_info.c \
+	bootstrap/bootstrap.c
+
+MINER_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/crypto.c \
+	common/validation.c \
+	common/ipc.c \
+	third_party/sha256/sha256.c \
+	miner/mempool.c \
+	miner/miner.c
+
+.PHONY: build test clean run
 
 build: $(CRYPTO_TEST) \
 	$(BLOCK_TEST) \
@@ -89,7 +107,9 @@ build: $(CRYPTO_TEST) \
 	$(BLOCK_VALIDATION_TEST) \
 	$(IPC_TEST) \
 	$(BLOCK_LINK_TEST) \
-	$(BLOCKCHAIN_TEST)
+	$(BLOCKCHAIN_TEST) \
+	$(BOOTSTRAP_BIN) \
+	$(MINER_BIN)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
@@ -135,6 +155,16 @@ $(BLOCKCHAIN_TEST): $(BLOCKCHAIN_TEST_SOURCES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCKCHAIN_TEST_SOURCES) \
 		-o $(BLOCKCHAIN_TEST)
 
+$(BOOTSTRAP_BIN): $(BOOTSTRAP_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BOOTSTRAP_SOURCES) \
+		-o $(BOOTSTRAP_BIN)
+
+$(MINER_BIN): $(MINER_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MINER_SOURCES) \
+		-o $(MINER_BIN) -pthread
+
 test: build
 	./$(CRYPTO_TEST)
 	./$(BLOCK_TEST)
@@ -145,6 +175,9 @@ test: build
 	./$(IPC_TEST)
 	./$(BLOCK_LINK_TEST)
 	./$(BLOCKCHAIN_TEST)
+
+run: $(BOOTSTRAP_BIN)
+	./$(BOOTSTRAP_BIN) $(ARGS)
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
