@@ -17,6 +17,7 @@ BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
 BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
 BOOTSTRAP_BIN := $(BIN_DIR)/blockchain
 MINER_BIN := $(BIN_DIR)/miner
+CLIENT_BIN := $(BIN_DIR)/client
 NODE_BIN := $(BIN_DIR)/node
 
 CRYPTO_TEST_SOURCES := \
@@ -98,6 +99,11 @@ MINER_SOURCES := \
 	miner/mempool.c \
 	miner/miner.c 
 
+CLIENT_SOURCES := \
+     common/errors.c \
+     common/ipc.c \
+     client/client.c
+
 NODE_SOURCES := \
 	common/errors.c \
 	common/block.c \
@@ -121,7 +127,8 @@ build: $(CRYPTO_TEST) \
 	$(BLOCK_LINK_TEST) \
 	$(BLOCKCHAIN_TEST) \
 	$(BOOTSTRAP_BIN) \
-	$(MINER_BIN) \
+    $(MINER_BIN) \
+    $(CLIENT_BIN) \
 	$(NODE_BIN)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
@@ -177,6 +184,11 @@ $(MINER_BIN): $(MINER_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MINER_SOURCES) \
 		-o $(MINER_BIN) -pthread
+
+$(CLIENT_BIN): $(CLIENT_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(CLIENT_SOURCES) \
+	        -o $(CLIENT_BIN)
 	
 $(NODE_BIN): $(NODE_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
