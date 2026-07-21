@@ -443,6 +443,206 @@ static int test_null_blockchain_validation(void)
     return 0;
 }
 
+static int test_blockchain_csv_round_trip(void)
+{
+    const char *path = "tests/tmp_blockchain.csv";
+
+    blockchain_t original;
+    blockchain_t restored;
+    block_t first;
+    block_t second;
+    char first_hash[SHA256_HEX_STRING_SIZE];
+    int result;
+
+    if (blockchain_init(&original) != PROJECT_OK ||
+        blockchain_init(&restored) != PROJECT_OK) {
+        return 1;
+    }
+
+    result = prepare_block(
+        &first,
+        0,
+        "Genesis block"
+    );
+
+    if (result != PROJECT_OK) {
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    result = calculate_block_hash(
+        &first,
+        first_hash
+    );
+
+    if (result != PROJECT_OK) {
+        block_destroy(&first);
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    result = prepare_block(
+        &second,
+        1,
+        "Alice pays Bob 10 coins"
+    );
+
+    if (result != PROJECT_OK) {
+        block_destroy(&first);
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    strcpy(second.previous_hash, first_hash);
+
+    result = blockchain_append(&original, &first);
+
+    if (result == PROJECT_OK) {
+        result = blockchain_append(&original, &second);
+    }
+
+    block_destroy(&first);
+    block_destroy(&second);
+
+    if (result != PROJECT_OK) {
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    result = blockchain_save_csv(&original, path);
+
+    if (result != PROJECT_OK) {
+        fprintf(stderr, "blockchain_save_csv failed: %d\n", result);
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    result = blockchain_load_csv(&restored, path);
+
+    remove(path);
+
+    if (result != PROJECT_OK) {
+        fprintf(stderr, "blockchain_load_csv failed: %d\n", result);
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    if (restored.count != original.count) {
+        fprintf(stderr, "Loaded blockchain count differs.\n");
+        blockchain_destroy(&original);
+        blockchain_destroy(&restored);
+        return 1;
+    }
+
+    for (size_t index = 0; index < original.count; index++) {
+        char original_hash[SHA256_HEX_STRING_SIZE];
+        char restored_hash[SHA256_HEX_STRING_SIZE];
+
+        if (calculate_block_hash(
+                &original.blocks[index],
+                original_hash
+            ) != PROJECT_OK ||
+            calculate_block_hash(
+                &restored.blocks[index],
+                restored_hash
+            ) != PROJECT_OK ||
+            strcmp(original_hash, restored_hash) != 0) {
+            fprintf(stderr, "Loaded block differs from original.\n");
+            blockchain_destroy(&original);
+            blockchain_destroy(&restored);
+            return 1;
+        }
+    }
+
+    blockchain_destroy(&original);
+    blockchain_destroy(&restored);
+
+    printf("PASS: blockchain CSV round trip\n");
+    return 0;
+}
+
+static int test_load_invalid_csv_header(void)
+{
+    const char *path = "tests/tmp_invalid_header.csv";
+    FILE *file;
+    blockchain_t chain;
+
+    file = fopen(path, "w");
+
+    if (file == NULL) {
+        return 1;
+    }
+
+    fprintf(file, "wrong,header\n");
+    fclose(file);
+
+    if (blockchain_init(&chain) != PROJECT_OK) {
+        remove(path);
+        return 1;
+    }
+
+    int result = blockchain_load_csv(&chain, path);
+
+    remove(path);
+    blockchain_destroy(&chain);
+
+    if (result != ERR_FILE_FORMAT) {
+        fprintf(stderr, "Invalid CSV header was accepted.\n");
+        return 1;
+    }
+
+    printf("PASS: invalid blockchain CSV header rejected\n");
+    return 0;
+}
+
+static int test_load_official_genesis_csv(void)
+{
+    blockchain_t chain;
+
+    if (blockchain_init(&chain) != PROJECT_OK) {
+        return 1;
+    }
+
+    int result = blockchain_load_csv(
+        &chain,
+        "data/initial_state.csv"
+    );
+
+    if (result != PROJECT_OK) {
+        fprintf(
+            stderr,
+            "Official initial state could not be loaded: %d\n",
+            result
+        );
+
+        blockchain_destroy(&chain);
+        return 1;
+    }
+
+    if (chain.count != 1 ||
+        chain.blocks[0].index != 0 ||
+        chain.blocks[0].transaction_count != 1 ||
+        strcmp(
+            chain.blocks[0].transactions[0],
+            "Genesis block"
+        ) != 0) {
+        fprintf(stderr, "Official initial state was parsed incorrectly.\n");
+        blockchain_destroy(&chain);
+        return 1;
+    }
+
+    blockchain_destroy(&chain);
+
+    printf("PASS: official genesis blockchain CSV\n");
+    return 0;
+}
+
 int main(void)
 {
     int failed_tests = 0;
@@ -457,6 +657,9 @@ int main(void)
     failed_tests += test_invalid_blockchain_merkle_root();
     failed_tests += test_empty_blockchain_validation();
     failed_tests += test_null_blockchain_validation();
+    failed_tests += test_blockchain_csv_round_trip();
+    failed_tests += test_load_invalid_csv_header();
+    failed_tests += test_load_official_genesis_csv();
 
     if (failed_tests != 0) {
         fprintf(

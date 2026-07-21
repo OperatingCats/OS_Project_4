@@ -3,6 +3,7 @@
 #include "crypto.h"
 #include "errors.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -161,4 +162,187 @@ const block_t *blockchain_get_by_hash(
     }
 
     return NULL;
+}
+
+#define BLOCKCHAIN_CSV_HEADER \
+    "index,timestamp,prev_hash,merkle_root,nonce,transactions"
+
+#define MAX_BLOCK_CSV_LINE_LENGTH 8192
+
+int blockchain_save_csv(
+    const blockchain_t *chain,
+    const char *path
+)
+{
+    FILE *file;
+
+    if (chain == NULL || path == NULL) {
+        return ERR_INVALID_ARGUMENT;
+    }
+
+    if (chain->count > 0 && chain->blocks == NULL) {
+        return ERR_INVALID_BLOCKCHAIN;
+    }
+
+    file = fopen(path, "w");
+
+    if (file == NULL) {
+        return ERR_FILE_OPEN;
+    }
+
+    if (fprintf(file, "%s\n", BLOCKCHAIN_CSV_HEADER) < 0) {
+        fclose(file);
+        return ERR_FILE_WRITE;
+    }
+
+    for (size_t index = 0; index < chain->count; index++) {
+        char *csv_line = NULL;
+
+        int result = block_to_csv(
+            &chain->blocks[index],
+            &csv_line
+        );
+
+        if (result != PROJECT_OK) {
+            fclose(file);
+            return result;
+        }
+
+        if (fprintf(file, "%s\n", csv_line) < 0) {
+            free(csv_line);
+            fclose(file);
+            return ERR_FILE_WRITE;
+        }
+
+        free(csv_line);
+    }
+
+    if (fclose(file) != 0) {
+        return ERR_FILE_WRITE;
+    }
+
+    return PROJECT_OK;
+}
+
+int blockchain_load_csv(
+    blockchain_t *chain,
+    const char *path
+)
+{
+    FILE *file;
+    blockchain_t loaded_chain;
+    char line[MAX_BLOCK_CSV_LINE_LENGTH];
+    int result;
+
+    if (chain == NULL || path == NULL) {
+        return ERR_INVALID_ARGUMENT;
+    }
+
+    file = fopen(path, "r");
+
+    if (file == NULL) {
+        return ERR_FILE_OPEN;
+    }
+
+    if (fgets(line, sizeof(line), file) == NULL) {
+        fclose(file);
+        return ERR_FILE_READ;
+    }
+
+    /*
+     * Reject a header longer than the available buffer.
+     */
+    if (strchr(line, '\n') == NULL && !feof(file)) {
+        fclose(file);
+        return ERR_FILE_FORMAT;
+    }
+
+    line[strcspn(line, "\r\n")] = '\0';
+
+    if (strcmp(line, BLOCKCHAIN_CSV_HEADER) != 0) {
+        fclose(file);
+        return ERR_FILE_FORMAT;
+    }
+
+    result = blockchain_init(&loaded_chain);
+
+    if (result != PROJECT_OK) {
+        fclose(file);
+        return result;
+    }
+
+    while (fgets(line, sizeof(line), file) != NULL) {
+        block_t block;
+
+        /*
+         * Reject lines that exceed the buffer.
+         */
+        if (strchr(line, '\n') == NULL && !feof(file)) {
+            blockchain_destroy(&loaded_chain);
+            fclose(file);
+            return ERR_FILE_FORMAT;
+        }
+
+        line[strcspn(line, "\r\n")] = '\0';
+
+        /*
+         * Ignore empty lines.
+         */
+        if (line[0] == '\0') {
+            continue;
+        }
+
+        result = block_init(&block);
+
+        if (result != PROJECT_OK) {
+            blockchain_destroy(&loaded_chain);
+            fclose(file);
+            return result;
+        }
+
+        result = block_from_csv(line, &block);
+
+        if (result == PROJECT_OK) {
+            result = blockchain_append(
+                &loaded_chain,
+                &block
+            );
+        }
+
+        block_destroy(&block);
+
+        if (result != PROJECT_OK) {
+            blockchain_destroy(&loaded_chain);
+            fclose(file);
+            return result;
+        }
+    }
+
+    if (ferror(file)) {
+        blockchain_destroy(&loaded_chain);
+        fclose(file);
+        return ERR_FILE_READ;
+    }
+
+    if (fclose(file) != 0) {
+        blockchain_destroy(&loaded_chain);
+        return ERR_FILE_READ;
+    }
+
+    /*
+     * A valid blockchain state must contain at least the genesis block.
+     */
+    if (loaded_chain.count == 0) {
+        blockchain_destroy(&loaded_chain);
+        return ERR_FILE_FORMAT;
+    }
+
+    /*
+     * The destination chain must already have been initialized.
+     * Replace it only after the complete file has been loaded.
+     */
+    blockchain_destroy(chain);
+    *chain = loaded_chain;
+
+    return PROJECT_OK;
 }
