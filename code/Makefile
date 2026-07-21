@@ -87,7 +87,7 @@ build: $(CRYPTO_TEST) \
 	$(VALIDATION_TEST) \
 	$(BLOCK_HASH_TEST) \
 	$(BLOCK_VALIDATION_TEST) \
-	$(IPC_TEST)
+	$(IPC_TEST) \
 	$(BLOCK_LINK_TEST) \
 	$(BLOCKCHAIN_TEST)
 
@@ -143,9 +143,6 @@ test: build
 	./$(BLOCK_HASH_TEST)
 	./$(BLOCK_VALIDATION_TEST)
 	./$(IPC_TEST)
-
-clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)
 	./$(BLOCK_LINK_TEST)
 	./$(BLOCKCHAIN_TEST)
 
