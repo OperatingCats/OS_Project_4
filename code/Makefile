@@ -13,6 +13,8 @@ VALIDATION_TEST := $(BIN_DIR)/test_validation
 BLOCK_HASH_TEST := $(BIN_DIR)/test_block_hash
 BLOCK_VALIDATION_TEST := $(BIN_DIR)/test_block_validation
 IPC_TEST := $(BIN_DIR)/test_ipc
+BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
+BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
 
 CRYPTO_TEST_SOURCES := \
 	common/errors.c \
@@ -60,6 +62,22 @@ IPC_TEST_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
 	tests/test_ipc.c
+BLOCK_LINK_TEST_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/crypto.c \
+	common/validation.c \
+	third_party/sha256/sha256.c \
+	tests/test_block_link.c
+
+BLOCKCHAIN_TEST_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/blockchain.c \
+	common/crypto.c \
+	common/validation.c \
+	third_party/sha256/sha256.c \
+	tests/test_blockchain.c
 
 .PHONY: build test clean
 
@@ -70,6 +88,8 @@ build: $(CRYPTO_TEST) \
 	$(BLOCK_HASH_TEST) \
 	$(BLOCK_VALIDATION_TEST) \
 	$(IPC_TEST)
+	$(BLOCK_LINK_TEST) \
+	$(BLOCKCHAIN_TEST)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
@@ -105,6 +125,15 @@ $(IPC_TEST): $(IPC_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(IPC_TEST_SOURCES) \
 		-o $(IPC_TEST)
+$(BLOCK_LINK_TEST): $(BLOCK_LINK_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_LINK_TEST_SOURCES) \
+		-o $(BLOCK_LINK_TEST)
+
+$(BLOCKCHAIN_TEST): $(BLOCKCHAIN_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCKCHAIN_TEST_SOURCES) \
+		-o $(BLOCKCHAIN_TEST)
 
 test: build
 	./$(CRYPTO_TEST)
@@ -117,3 +146,9 @@ test: build
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
+	./$(BLOCK_LINK_TEST)
+	./$(BLOCKCHAIN_TEST)
+
+clean:
+	rm -rf $(BUILD_DIR) $(BIN_DIR)
+

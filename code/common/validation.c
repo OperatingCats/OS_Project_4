@@ -146,3 +146,90 @@ int validate_block_merkle_root(const block_t *block)
 
     return PROJECT_OK;
 }
+
+int validate_block_link(
+    const block_t *previous,
+    const block_t *current
+)
+{
+    char previous_block_hash[SHA256_HEX_STRING_SIZE];
+    int result;
+
+    if (previous == NULL || current == NULL) {
+        return ERR_INVALID_ARGUMENT;
+    }
+
+    result = validate_block_merkle_root(previous);
+
+    if (result != PROJECT_OK) {
+        return ERR_INVALID_BLOCK;
+    }
+
+    result = validate_block_merkle_root(current);
+
+    if (result != PROJECT_OK) {
+        return ERR_INVALID_BLOCK;
+    }
+
+    if (current->index != previous->index + 1) {
+        return ERR_INVALID_BLOCKCHAIN;
+    }
+
+    if (current->timestamp < previous->timestamp) {
+        return ERR_INVALID_BLOCKCHAIN;
+    }
+
+    result = calculate_block_hash(
+        previous,
+        previous_block_hash
+    );
+
+    if (result != PROJECT_OK) {
+        return result;
+    }
+
+    if (strcmp(
+            current->previous_hash,
+            previous_block_hash
+        ) != 0) {
+        return ERR_INVALID_BLOCKCHAIN;
+    }
+
+    return PROJECT_OK;
+}
+
+int validate_blockchain(const blockchain_t *chain)
+{
+    int result;
+
+    if (chain == NULL) {
+        return ERR_INVALID_ARGUMENT;
+    }
+
+    if (chain->blocks == NULL || chain->count == 0) {
+        return ERR_INVALID_BLOCKCHAIN;
+    }
+
+    for (size_t index = 0; index < chain->count; index++) {
+        result = validate_block_merkle_root(
+            &chain->blocks[index]
+        );
+
+        if (result != PROJECT_OK) {
+            return ERR_INVALID_BLOCKCHAIN;
+        }
+    }
+
+    for (size_t index = 1; index < chain->count; index++) {
+        result = validate_block_link(
+            &chain->blocks[index - 1],
+            &chain->blocks[index]
+        );
+
+        if (result != PROJECT_OK) {
+            return ERR_INVALID_BLOCKCHAIN;
+        }
+    }
+
+    return PROJECT_OK;
+}
