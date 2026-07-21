@@ -17,6 +17,7 @@ BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
 BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
 BOOTSTRAP_BIN := $(BIN_DIR)/blockchain
 MINER_BIN := $(BIN_DIR)/miner
+NODE_BIN := $(BIN_DIR)/node
 
 CRYPTO_TEST_SOURCES := \
 	common/errors.c \
@@ -95,7 +96,18 @@ MINER_SOURCES := \
 	common/ipc.c \
 	third_party/sha256/sha256.c \
 	miner/mempool.c \
-	miner/miner.c
+	miner/miner.c 
+
+NODE_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/blockchain.c \
+	common/crypto.c \
+	common/validation.c \
+	common/ipc.c \
+	common/node_queue.c \
+	third_party/sha256/sha256.c \
+	node/node.c
 
 .PHONY: build test clean run
 
@@ -109,7 +121,8 @@ build: $(CRYPTO_TEST) \
 	$(BLOCK_LINK_TEST) \
 	$(BLOCKCHAIN_TEST) \
 	$(BOOTSTRAP_BIN) \
-	$(MINER_BIN)
+	$(MINER_BIN) \
+	$(NODE_BIN)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
@@ -164,6 +177,11 @@ $(MINER_BIN): $(MINER_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MINER_SOURCES) \
 		-o $(MINER_BIN) -pthread
+	
+$(NODE_BIN): $(NODE_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(NODE_SOURCES) \
+		-o $(NODE_BIN) -pthread
 
 test: build
 	./$(CRYPTO_TEST)
