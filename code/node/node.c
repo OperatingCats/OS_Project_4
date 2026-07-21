@@ -4,7 +4,9 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
-
+#include "block.h"
+#include "validation.h"
+#include "blockchain.h"
 #include "node.h"
 #include "protocol.h"
 #include "ipc.h"
@@ -49,17 +51,86 @@ static void *receiver_main(void *arg) {
     return NULL;
 }
 
+static void handle_block_proposal(node_t *node, queue_message_t *msg) {
+
+
+    char *line = malloc(msg->header.payload_len + 1);
+    if (line == NULL) {
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "out of memory", 13);
+        return;
+    }
+    memcpy(line, msg->payload, msg->header.payload_len);
+    line[msg->header.payload_len] = '\0';
+
+    block_t proposed;
+    block_init(&proposed);
+    int rc = block_from_csv(line, &proposed);
+    free(line);
+
+    if (rc != PROJECT_OK) {
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "malformed block", 16);
+        return;
+    }
+
+    pthread_mutex_lock(&node->chain_lock);
+
+    const block_t *last = blockchain_get_by_index(&node->chain, node->chain.count - 1);
+
+    int valid = validate_block_structure(&proposed) == PROJECT_OK
+             && validate_block_merkle_root(&proposed) == PROJECT_OK
+             && (last == NULL || validate_block_link(last, &proposed) == PROJECT_OK);
+
+    if (!valid) {
+        pthread_mutex_unlock(&node->chain_lock);
+        block_destroy(&proposed);
+        ipc_send(msg->client_fd, MSG_BLOCK_REJECT, (uint32_t)node->node_id,
+                 "invalid proposal", 17);
+        return;
+    }
+
+    rc = blockchain_append(&node->chain, &proposed);
+    pthread_mutex_unlock(&node->chain_lock);
+
+    block_destroy(&proposed);
+
+    if (rc != PROJECT_OK) {
+        ipc_send(msg->client_fd, MSG_BLOCK_REJECT, (uint32_t)node->node_id,
+                 "append failed", 14);
+        return;
+    }
+
+    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id, NULL, 0);
+    printf("node %d: block accepted and appended\n", node->node_id);
+
+    /* TODO: broadcast MSG_BLOCK_COMMIT to other Nodes/Miners — next step */
+}
+
 static void handle_message(node_t *node, queue_message_t *msg) {
     printf("node %d: worker handling message type=%u sender=%u payload_len=%u\n",
            node->node_id, msg->header.type, msg->header.sender_id,
            msg->header.payload_len);
 
-    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
-              NULL, 0);
+    switch (msg->header.type) {
+        case MSG_BLOCK_PROPOSAL:
+            if (node->is_coordinator) {
+                handle_block_proposal(node, msg);
+            } else {
+                ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                         "not coordinator", 16);
+            }
+            break;
+        default:
+            ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
+                      NULL, 0);
+            break;
+    }
 
     free(msg->payload);
     ipc_close(msg->client_fd);
 }
+
 
 static void *worker_main(void *arg) {
     node_t *node = (node_t *)arg;
