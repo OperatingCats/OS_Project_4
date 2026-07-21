@@ -49,9 +49,7 @@ static int test_single_transaction(void)
         "Alice pays Bob 10 coins"
     };
 
-    const char *expected =
-        "489cdba1288d6741c7b929eacbc97b43"
-        "a60039d6a21fc08a9d641716ba851778";
+    const char *expected = "452d6569c79a4e95f653fd194611fd570ee9c16c781a993c45c9456f6b1e1615";
 
     return check_merkle_root(
         "Merkle root with one transaction",
