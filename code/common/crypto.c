@@ -132,7 +132,11 @@ int calculate_merkle_root(
 
     current_count = transaction_count;
 
-    while (current_count > 1) {
+    /*
+     * Run at least once. Even a single transaction is an odd-sized
+     * level and must be paired with SHA256("").
+     */
+    do {
         size_t even_count;
         size_t next_count;
         char (*next_level)[SHA256_HEX_STRING_SIZE];
@@ -202,7 +206,8 @@ int calculate_merkle_root(
         free(current_level);
         current_level = next_level;
         current_count = next_count;
-    }
+
+    } while (current_count > 1);
 
     memcpy(
         output,
@@ -223,8 +228,8 @@ int build_block_hash_input(
     size_t transactions_length = 0;
     size_t fixed_length;
     size_t total_length;
-    char *buffer;
     size_t offset;
+    char *buffer;
     int written;
 
     if (block == NULL || output == NULL) {
@@ -233,22 +238,16 @@ int build_block_hash_input(
 
     *output = NULL;
 
-    /*
-     * Both hashes must contain exactly 64 hexadecimal characters.
-     */
     if (strlen(block->previous_hash) != SHA256_HEX_LENGTH ||
         strlen(block->merkle_root) != SHA256_HEX_LENGTH) {
         return ERR_INVALID_BLOCK;
     }
 
-    if (block->transaction_count == 0 ||
-        block->transactions == NULL) {
+    if (block->transactions == NULL ||
+        block->transaction_count == 0) {
         return ERR_INVALID_BLOCK;
     }
 
-    /*
-     * Calculate the length of the transactions joined with "::".
-     */
     for (size_t index = 0;
          index < block->transaction_count;
          index++) {
@@ -256,24 +255,14 @@ int build_block_hash_input(
             return ERR_INVALID_TRANSACTION;
         }
 
-        transactions_length += strlen(
-            block->transactions[index]
-        );
+        transactions_length +=
+            strlen(block->transactions[index]);
 
         if (index + 1 < block->transaction_count) {
             transactions_length += 2;
         }
     }
 
-    /*
-     * Fixed fields:
-     *
-     * index       = 16 hexadecimal characters
-     * timestamp   = 16 hexadecimal characters
-     * prev_hash   = 64 hexadecimal characters
-     * merkle_root = 64 hexadecimal characters
-     * nonce       = 16 hexadecimal characters
-     */
     fixed_length =
         16 +
         16 +
@@ -289,10 +278,6 @@ int build_block_hash_input(
         return ERR_MEMORY_ALLOCATION;
     }
 
-    /*
-     * PRIx64 prints a uint64_t as hexadecimal.
-     * 016 adds leading zeroes until the field has exactly 16 characters.
-     */
     written = snprintf(
         buffer,
         total_length + 1,
@@ -319,9 +304,8 @@ int build_block_hash_input(
     for (size_t index = 0;
          index < block->transaction_count;
          index++) {
-        size_t transaction_length = strlen(
-            block->transactions[index]
-        );
+        size_t transaction_length =
+            strlen(block->transactions[index]);
 
         memcpy(
             buffer + offset,
