@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Verifies Bootstrap survives a child process dying unexpectedly: it
-# should notice the child is gone and keep running instead of hanging.
-# A missing/unbuilt child binary causes exec() itself to fail, which is
-# used here as a cheap stand-in for a real crash -- Bootstrap sees the
-# same "child exited" signal either way.
+# Verifies Bootstrap notices a dead child and keeps running instead of
+# hanging. An exec() failure from a missing binary stands in for a crash
+# here; Bootstrap sees the same "child exited" signal either way.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

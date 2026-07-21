@@ -21,9 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Set once in main() before either thread starts; the signal handler
- * below only ever reads it to reach the one miner_state_t that exists
- * for the process's lifetime. */
+/* Lets the signal handler reach the one miner_state_t this process has. */
 static miner_state_t *g_state = NULL;
 
 static void handle_termination_signal(int signum)
@@ -142,11 +140,8 @@ static int query_node(
     return result;
 }
 
-/* Learns the real chain tip from Node 0. A miner joining a chain that
- * already has blocks would otherwise assume index 0 forever, since every
- * proposal gets rejected and nothing ever commits to correct it. Best
- * effort: on failure it just leaves the state alone for BLOCK_REJECT to
- * retry later. */
+/* Learns the real chain tip from Node 0, so a late-joining miner doesn't
+ * assume index 0 forever. Best effort: on failure, leaves state alone. */
 static void resync_from_node(miner_state_t *state)
 {
     message_header_t header;
