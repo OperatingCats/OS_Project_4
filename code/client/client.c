@@ -91,22 +91,33 @@ static int parse_non_negative_int(const char *text, int *out)
 static void client_log(client_state_t *state, const char *format, ...)
 {
     va_list args;
-    time_t now;
+    struct timespec now;
     struct tm local_time;
-    char timestamp[32];
+    char date_part[32];
+    char timestamp[40];
 
     if (state == NULL || format == NULL) {
         return;
     }
 
-    now = time(NULL);
+    if (clock_gettime(CLOCK_REALTIME, &now) == 0 &&
+        localtime_r(&now.tv_sec, &local_time) != NULL) {
+        unsigned int milliseconds =
+            (unsigned int)(now.tv_nsec / 1000000L);
 
-    if (localtime_r(&now, &local_time) != NULL) {
         strftime(
-            timestamp,
-            sizeof(timestamp),
+            date_part,
+            sizeof(date_part),
             "%Y-%m-%d %H:%M:%S",
             &local_time
+        );
+
+        snprintf(
+            timestamp,
+            sizeof(timestamp),
+            "%s.%03u",
+            date_part,
+            milliseconds
         );
     } else {
         snprintf(timestamp, sizeof(timestamp), "unknown-time");

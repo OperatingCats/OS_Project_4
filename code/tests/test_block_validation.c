@@ -168,6 +168,79 @@ static int test_null_block(void)
     return 0;
 }
 
+static int test_official_genesis_block(void)
+{
+    block_t genesis;
+    int result;
+
+    result = block_init(&genesis);
+
+    if (result != PROJECT_OK) {
+        return 1;
+    }
+
+    genesis.index = 0;
+    genesis.timestamp = 0x67890001;
+    genesis.nonce = 0;
+
+    strcpy(
+        genesis.previous_hash,
+        "00000000000000000000000000000000"
+        "00000000000000000000000000000000"
+    );
+
+    result = block_add_transaction(
+        &genesis,
+        "Genesis block"
+    );
+
+    if (result != PROJECT_OK) {
+        block_destroy(&genesis);
+        return 1;
+    }
+
+    result = calculate_merkle_root(
+        (const char *const *)genesis.transactions,
+        genesis.transaction_count,
+        genesis.merkle_root
+    );
+
+    if (result != PROJECT_OK) {
+        block_destroy(&genesis);
+        return 1;
+    }
+
+    result = validate_block_structure(&genesis);
+
+    if (result != PROJECT_OK) {
+        fprintf(
+            stderr,
+            "Official genesis structure was rejected.\n"
+        );
+
+        block_destroy(&genesis);
+        return 1;
+    }
+
+    result = validate_block_merkle_root(&genesis);
+
+    if (result != PROJECT_OK) {
+        fprintf(
+            stderr,
+            "Official genesis Merkle root was rejected.\n"
+        );
+
+        block_destroy(&genesis);
+        return 1;
+    }
+
+    block_destroy(&genesis);
+
+    printf("PASS: official genesis block validation\n");
+
+    return 0;
+}
+
 int main(void)
 {
     int failed_tests = 0;
@@ -177,6 +250,7 @@ int main(void)
     failed_tests += test_valid_merkle_root();
     failed_tests += test_invalid_merkle_root();
     failed_tests += test_null_block();
+    failed_tests += test_official_genesis_block();
 
     if (failed_tests != 0) {
         fprintf(

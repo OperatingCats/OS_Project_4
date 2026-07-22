@@ -42,6 +42,18 @@ const char *project_error_string(project_error_t error)
         case ERR_NOT_FOUND:
             return "Requested element not found";
 
+        case ERR_IPC:
+            return "IPC operation failed";
+
+        case ERR_TIMEOUT:
+            return "Operation timed out";
+
+        case ERR_PROCESS:
+            return "Process operation failed";
+
+        case ERR_ALREADY_EXISTS:
+            return "Resource already exists";
+
         default:
             return "Unknown project error";
     }

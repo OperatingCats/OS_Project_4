@@ -1,0 +1,3 @@
+Genesis block|b815a93dd7f59058a27e63558ba5aa6445d851f316070ec13db673d5ab38e0cc
+Alice pays Bob 10 coins::Bob pays Carol 5 coins|d05a48e5dee6b30fb2a14dd6fd33b6ff56d8f641cbbb249b8f95959baa1c4df8
+Alice pays Bob 10 coins::Bob pays Carol 5 coins::Carol pays Dave 2 coins|29859cc1a5d5035df927c394bc2befa216b2d2655a2ea361803ef651b469e8fe

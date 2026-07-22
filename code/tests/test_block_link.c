@@ -66,7 +66,7 @@ static int prepare_linked_blocks(
         1000,
         "00000000000000000000000000000000"
         "00000000000000000000000000000000",
-        "Alice pays Bob 10 coins"
+        "Genesis block"
     );
 
     if (result != PROJECT_OK) {
