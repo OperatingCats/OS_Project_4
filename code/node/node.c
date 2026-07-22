@@ -574,13 +574,27 @@ static void handle_block_commit(node_t *node, queue_message_t *msg) {
             sync_str[sync_header.payload_len] = '\0';
 
             char *saveptr = NULL;
+	    pthread_mutex_lock(&node->chain_lock);
             char *line_tok = strtok_r(sync_str, "\n", &saveptr);
-            pthread_mutex_lock(&node->chain_lock);
             while (line_tok != NULL) {
                 block_t synced;
                 block_init(&synced);
                 if (block_from_csv(line_tok, &synced) == PROJECT_OK) {
-                    blockchain_append(&node->chain, &synced);
+                    const block_t *sync_last = (node->chain.count > 0)
+                        ? &node->chain.blocks[node->chain.count - 1]
+                        : NULL;
+                    int sync_valid =
+                        validate_block_structure(&synced) == PROJECT_OK &&
+                        validate_block_merkle_root(&synced) == PROJECT_OK &&
+                        (sync_last == NULL ||
+                         validate_block_link(sync_last, &synced) == PROJECT_OK);
+                    if (sync_valid) {
+                        blockchain_append(&node->chain, &synced);
+                    } else {
+                        logger_log(node->log_file, "node", node->node_id,
+                                   "recovery: rejected invalid synced block, index=%llu",
+                                   (unsigned long long)synced.index);
+                    }
                 }
                 block_destroy(&synced);
                 line_tok = strtok_r(NULL, "\n", &saveptr);
