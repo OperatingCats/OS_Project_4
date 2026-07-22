@@ -105,15 +105,16 @@ CLIENT_SOURCES := \
      client/client.c
 
 NODE_SOURCES := \
-	common/errors.c \
-	common/block.c \
-	common/blockchain.c \
-	common/crypto.c \
-	common/validation.c \
-	common/ipc.c \
-	common/node_queue.c \
-	third_party/sha256/sha256.c \
-	node/node.c
+    common/errors.c \
+    common/block.c \
+    common/blockchain.c \
+    common/crypto.c \
+    common/validation.c \
+    common/ipc.c \
+    common/node_queue.c \
+    common/logger.c \
+    third_party/sha256/sha256.c \
+    node/node.c
 
 .PHONY: build test clean run
 

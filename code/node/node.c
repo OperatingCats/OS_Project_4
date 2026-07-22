@@ -1,9 +1,13 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <signal.h>
+
 #include "block.h"
 #include "validation.h"
 #include "blockchain.h"
@@ -12,7 +16,6 @@
 #include "ipc.h"
 #include "errors.h"
 #include "node_queue.h"
-#include <signal.h>
 
 static node_t *g_node_for_signal = NULL;
 
@@ -66,73 +69,112 @@ static void *receiver_main(void *arg) {
 }
 
 static void handle_block_proposal(node_t *node, queue_message_t *msg) {
+    char *line;
+    block_t proposed;
+    const block_t *last = NULL;
+    uint64_t accepted_index;
+    int rc;
+    int valid;
 
+    logger_log(node->log_file, "node", node->node_id,
+               "block proposal received from miner %u",
+               msg->header.sender_id);
 
-    char *line = malloc(msg->header.payload_len + 1);
+    if (msg->payload == NULL || msg->header.payload_len == 0) {
+        ipc_send(msg->client_fd, MSG_BLOCK_REJECT,
+                 (uint32_t)node->node_id,
+                 "empty proposal", 14);
+        logger_log(node->log_file, "node", node->node_id,
+                   "block proposal rejected: empty payload");
+        return;
+    }
+
+    line = malloc((size_t)msg->header.payload_len + 1);
     if (line == NULL) {
-        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                 (uint32_t)node->node_id,
                  "out of memory", 13);
         return;
     }
+
     memcpy(line, msg->payload, msg->header.payload_len);
     line[msg->header.payload_len] = '\0';
 
-    block_t proposed;
     block_init(&proposed);
-    int rc = block_from_csv(line, &proposed);
+    rc = block_from_csv(line, &proposed);
     free(line);
 
     if (rc != PROJECT_OK) {
-        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
-                 "malformed block", 16);
+        ipc_send(msg->client_fd, MSG_BLOCK_REJECT,
+                 (uint32_t)node->node_id,
+                 "malformed block", 15);
+        logger_log(node->log_file, "node", node->node_id,
+                   "block proposal rejected: malformed block");
         return;
     }
 
     pthread_mutex_lock(&node->chain_lock);
 
-    const block_t *last = blockchain_get_by_index(&node->chain, node->chain.count - 1);
+    if (node->chain.count > 0) {
+        last = &node->chain.blocks[node->chain.count - 1];
+    }
 
-    int valid = validate_block_structure(&proposed) == PROJECT_OK
-             && validate_block_merkle_root(&proposed) == PROJECT_OK
-             && (last == NULL || validate_block_link(last, &proposed) == PROJECT_OK);
+    valid =
+        validate_block_structure(&proposed) == PROJECT_OK &&
+        validate_block_merkle_root(&proposed) == PROJECT_OK;
 
+    if (valid) {
+        if (last == NULL) {
+            valid = (proposed.index == 0);
+        } else {
+            valid = validate_block_link(last, &proposed) == PROJECT_OK;
+        }
+    }
 
     if (!valid) {
         pthread_mutex_unlock(&node->chain_lock);
         block_destroy(&proposed);
-        ipc_send(msg->client_fd, MSG_BLOCK_REJECT, (uint32_t)node->node_id,
-                 "invalid proposal", 17);
-	logger_log(node->log_file, "node", node->node_id,
-                   "block proposal rejected: invalid proposal");
+
+        ipc_send(msg->client_fd, MSG_BLOCK_REJECT,
+                 (uint32_t)node->node_id,
+                 "invalid proposal", 16);
+        logger_log(node->log_file, "node", node->node_id,
+                   "block proposal rejected: invalid structure, Merkle root, index, or link");
         return;
     }
 
+    accepted_index = proposed.index;
     rc = blockchain_append(&node->chain, &proposed);
-    pthread_mutex_unlock(&node->chain_lock);
 
+    if (rc == PROJECT_OK) {
+        const block_t *last_committed =
+            &node->chain.blocks[node->chain.count - 1];
+        broadcast_commit(node, last_committed);
+    }
+
+    pthread_mutex_unlock(&node->chain_lock);
     block_destroy(&proposed);
 
     if (rc != PROJECT_OK) {
-        ipc_send(msg->client_fd, MSG_BLOCK_REJECT, (uint32_t)node->node_id,
-                 "append failed", 14);
-	logger_log(node->log_file, "node", node->node_id,
+        ipc_send(msg->client_fd, MSG_BLOCK_REJECT,
+                 (uint32_t)node->node_id,
+                 "append failed", 13);
+        logger_log(node->log_file, "node", node->node_id,
                    "block proposal rejected: append failed");
         return;
     }
 
-    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id, NULL, 0);
-    printf("node %d: block accepted and appended\n", node->node_id);
-    logger_log(node->log_file, "node", node->node_id,
-               "block %llu accepted and appended",
-               (unsigned long long)proposed.index);
-    pthread_mutex_lock(&node->chain_lock);
-    const block_t *last_committed = blockchain_get_by_index(&node->chain, node->chain.count - 1);
-    if (last_committed != NULL) {
-        broadcast_commit(node, last_committed);
-    }
-    pthread_mutex_unlock(&node->chain_lock);
-}
+    ipc_send(msg->client_fd, MSG_RESPONSE_OK,
+             (uint32_t)node->node_id, NULL, 0);
 
+    printf("node %d: block %llu accepted and appended\n",
+           node->node_id,
+           (unsigned long long)accepted_index);
+
+    logger_log(node->log_file, "node", node->node_id,
+               "block committed: index=%llu",
+               (unsigned long long)accepted_index);
+}
 
 
 #define MAX_PROBE_PEERS 16
@@ -247,57 +289,134 @@ static void handle_query_block(node_t *node, queue_message_t *msg) {
 }
 
 static void handle_query_chain(node_t *node, queue_message_t *msg) {
-    pthread_mutex_lock(&node->chain_lock);
+    static const char csv_header[] =
+        "index,timestamp,prev_hash,merkle_root,nonce,transactions\n";
 
-    if (node->chain.count == 0) {
-        pthread_mutex_unlock(&node->chain_lock);
-        ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id, NULL, 0);
-        return;
+    char *payload_str = NULL;
+    size_t start_position = 0;
+    size_t capacity = 4096;
+    size_t length = strlen(csv_header);
+    char *buffer;
+
+    if (msg->header.payload_len > 0) {
+        payload_str = malloc((size_t)msg->header.payload_len + 1);
+        if (payload_str == NULL) {
+            ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                     (uint32_t)node->node_id,
+                     "out of memory", 13);
+            return;
+        }
+
+        memcpy(payload_str, msg->payload, msg->header.payload_len);
+        payload_str[msg->header.payload_len] = '\0';
     }
 
-    size_t buf_capacity = 4096;
-    char *buf = malloc(buf_capacity);
-    size_t buf_len = 0;
-    if (buf == NULL) {
+    pthread_mutex_lock(&node->chain_lock);
+
+    if (payload_str != NULL && payload_str[0] != '\0') {
+        const block_t *found = NULL;
+        unsigned long long requested_index;
+        char requested_hash[SHA256_HEX_STRING_SIZE];
+
+        if (sscanf(payload_str, "--index %llu", &requested_index) == 1) {
+            found = blockchain_get_by_index(
+                &node->chain,
+                (uint64_t)requested_index
+            );
+        } else if (sscanf(payload_str, "--hash %64s", requested_hash) == 1) {
+            found = blockchain_get_by_hash(
+                &node->chain,
+                requested_hash
+            );
+        } else {
+            pthread_mutex_unlock(&node->chain_lock);
+            free(payload_str);
+            ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                     (uint32_t)node->node_id,
+                     "invalid query", 13);
+            return;
+        }
+
+        if (found == NULL) {
+            pthread_mutex_unlock(&node->chain_lock);
+            free(payload_str);
+            ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                     (uint32_t)node->node_id,
+                     "block not found", 15);
+            return;
+        }
+
+        start_position = (size_t)(found - node->chain.blocks);
+    }
+
+    free(payload_str);
+
+    buffer = malloc(capacity);
+    if (buffer == NULL) {
         pthread_mutex_unlock(&node->chain_lock);
-        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                 (uint32_t)node->node_id,
                  "out of memory", 13);
         return;
     }
-    buf[0] = '\0';
 
-    for (size_t i = 0; i < node->chain.count; i++) {
+    memcpy(buffer, csv_header, length);
+    buffer[length] = '\0';
+
+    for (size_t index = start_position;
+         index < node->chain.count;
+         index++) {
         char *line = NULL;
-        int rc = block_to_csv(&node->chain.blocks[i], &line);
+        size_t line_length;
+        int rc = block_to_csv(&node->chain.blocks[index], &line);
+
         if (rc != PROJECT_OK || line == NULL) {
-            continue;
+            free(buffer);
+            pthread_mutex_unlock(&node->chain_lock);
+            ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                     (uint32_t)node->node_id,
+                     "serialization failed", 20);
+            return;
         }
-        size_t line_len = strlen(line);
-        while (buf_len + line_len + 2 > buf_capacity) {
-            buf_capacity *= 2;
-            char *grown = realloc(buf, buf_capacity);
+
+        line_length = strlen(line);
+
+        while (length + line_length + 2 > capacity) {
+            char *grown;
+            capacity *= 2;
+            grown = realloc(buffer, capacity);
+
             if (grown == NULL) {
-                free(buf);
                 free(line);
+                free(buffer);
                 pthread_mutex_unlock(&node->chain_lock);
-                ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                ipc_send(msg->client_fd, MSG_RESPONSE_ERR,
+                         (uint32_t)node->node_id,
                          "out of memory", 13);
                 return;
             }
-            buf = grown;
+
+            buffer = grown;
         }
-        memcpy(buf + buf_len, line, line_len);
-        buf_len += line_len;
-        buf[buf_len++] = '\n';
-        buf[buf_len] = '\0';
+
+        memcpy(buffer + length, line, line_length);
+        length += line_length;
+        buffer[length++] = '\n';
+        buffer[length] = '\0';
         free(line);
     }
 
     pthread_mutex_unlock(&node->chain_lock);
 
-    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
-              buf, (uint32_t)buf_len);
-    free(buf);
+    ipc_send(msg->client_fd, MSG_RESPONSE_OK,
+             (uint32_t)node->node_id,
+             buffer, (uint32_t)length);
+
+    logger_log(node->log_file, "node", node->node_id,
+               "query blockchain answered from position %zu",
+               start_position);
+
+    free(buffer);
 }
 
 
@@ -388,14 +507,26 @@ static void handle_block_commit(node_t *node, queue_message_t *msg) {
         const block_t *last = (node->chain.count > 0)
             ? blockchain_get_by_index(&node->chain, node->chain.count - 1)
             : NULL;
-        int valid = validate_block_structure(&incoming) == PROJECT_OK
-                 && validate_block_merkle_root(&incoming) == PROJECT_OK
-                 && (last == NULL || validate_block_link(last, &incoming) == PROJECT_OK);
+        int valid =
+            validate_block_structure(&incoming) == PROJECT_OK &&
+            validate_block_merkle_root(&incoming) == PROJECT_OK;
+
         if (valid) {
-            blockchain_append(&node->chain, &incoming);
-            logger_log(node->log_file, "node", node->node_id,
-                       "block %llu committed via broadcast",
-                       (unsigned long long)incoming.index);
+            if (last == NULL) {
+                valid = (incoming.index == 0);
+            } else {
+                valid = validate_block_link(last, &incoming) == PROJECT_OK;
+            }
+        }
+
+        if (valid) {
+            int append_rc = blockchain_append(&node->chain, &incoming);
+
+            if (append_rc == PROJECT_OK) {
+                logger_log(node->log_file, "node", node->node_id,
+                           "block committed via broadcast: index=%llu",
+                           (unsigned long long)incoming.index);
+            }
         }
         pthread_mutex_unlock(&node->chain_lock);
         block_destroy(&incoming);
@@ -403,12 +534,14 @@ static void handle_block_commit(node_t *node, queue_message_t *msg) {
     }
 
     if (incoming.index < expected_index) {
-        /* Old/duplicate ignore. */
+        uint64_t duplicate_index = incoming.index;
+
         pthread_mutex_unlock(&node->chain_lock);
         block_destroy(&incoming);
+
         logger_log(node->log_file, "node", node->node_id,
-                   "duplicate/old block %llu ignored",
-                   (unsigned long long)incoming.index);
+                   "duplicate/old block ignored: index=%llu",
+                   (unsigned long long)duplicate_index);
         return;
     }
 
@@ -552,17 +685,44 @@ int node_init(node_t *node, int node_id, const char *runtime_dir) {
         ipc_close(node->server_fd);
         return rc;
     }
-    char genesis_path[300];
-    int written = snprintf(genesis_path, sizeof(genesis_path),
-                            "%s/initial_state.csv", runtime_dir);
-    if (written > 0 && (size_t)written < sizeof(genesis_path)) {
-        int load_rc = blockchain_load_csv(&node->chain, genesis_path);
-        if (load_rc == PROJECT_OK) {
-            printf("node %d: loaded genesis state from %s (%zu block(s))\n",
+    {
+        char genesis_path[300];
+        int written = snprintf(
+            genesis_path,
+            sizeof(genesis_path),
+            "%s/initial_state.csv",
+            runtime_dir
+        );
+
+        if (written < 0 || (size_t)written >= sizeof(genesis_path)) {
+            blockchain_destroy(&node->chain);
+            ipc_close(node->server_fd);
+            ipc_unlink_socket(node->sock_path);
+            return ERR_INVALID_ARGUMENT;
+        }
+
+        if (access(genesis_path, F_OK) == 0) {
+            int load_rc = blockchain_load_csv(
+                &node->chain,
+                genesis_path
+            );
+
+            if (load_rc != PROJECT_OK) {
+                fprintf(stderr,
+                        "node %d: invalid initial state %s (err %d)\n",
+                        node_id, genesis_path, load_rc);
+                blockchain_destroy(&node->chain);
+                ipc_close(node->server_fd);
+                ipc_unlink_socket(node->sock_path);
+                return load_rc;
+            }
+
+            printf("node %d: loaded initial state from %s (%zu block(s))\n",
                    node_id, genesis_path, node->chain.count);
-        } else {
-            printf("node %d: no genesis state loaded from %s (err %d)\n",
-                   node_id, genesis_path, load_rc);
+
+            logger_log(node->log_file, "node", node->node_id,
+                       "initial state loaded: %zu block(s)",
+                       node->chain.count);
         }
     }
     pthread_mutex_init(&node->chain_lock, NULL);
