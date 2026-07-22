@@ -18,6 +18,8 @@ int main(int argc, char *argv[]) {
         type = MSG_QUERY_CHAIN;
     } else if (strcmp(argv[2], "block") == 0) {
         type = MSG_QUERY_BLOCK;
+    } else if (strcmp(argv[2], "sync") == 0) {
+        type = MSG_SYNC_REQUEST;
     } else {
         fprintf(stderr, "Unknown query type: %s\n", argv[2]);
         return EXIT_FAILURE;

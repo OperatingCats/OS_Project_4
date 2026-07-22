@@ -14,6 +14,7 @@
 #include "node_queue.h"
 
 static void broadcast_commit(node_t *node, const block_t *committed);
+static void handle_sync_request(node_t *node, queue_message_t *msg);
 
 static void *receiver_main(void *arg) {
     node_t *node = (node_t *)arg;
@@ -289,6 +290,69 @@ static void handle_query_chain(node_t *node, queue_message_t *msg) {
     free(buf);
 }
 
+
+static void handle_sync_request(node_t *node, queue_message_t *msg) {
+    char *payload_str = malloc(msg->header.payload_len + 1);
+    if (payload_str == NULL) {
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "out of memory", 13);
+        return;
+    }
+    memcpy(payload_str, msg->payload, msg->header.payload_len);
+    payload_str[msg->header.payload_len] = '\0';
+
+    unsigned long long from_index = 0;
+    sscanf(payload_str, "%llu", &from_index);
+    free(payload_str);
+
+    pthread_mutex_lock(&node->chain_lock);
+
+    size_t buf_capacity = 4096;
+    char *buf = malloc(buf_capacity);
+    size_t buf_len = 0;
+    if (buf == NULL) {
+        pthread_mutex_unlock(&node->chain_lock);
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "out of memory", 13);
+        return;
+    }
+    buf[0] = '\0';
+
+    for (size_t i = (size_t)from_index; i < node->chain.count; i++) {
+        char *line = NULL;
+        int rc = block_to_csv(&node->chain.blocks[i], &line);
+        if (rc != PROJECT_OK || line == NULL) {
+            continue;
+        }
+        size_t line_len = strlen(line);
+        while (buf_len + line_len + 2 > buf_capacity) {
+            buf_capacity *= 2;
+            char *grown = realloc(buf, buf_capacity);
+            if (grown == NULL) {
+                free(buf);
+                free(line);
+                pthread_mutex_unlock(&node->chain_lock);
+                return;
+            }
+            buf = grown;
+        }
+        memcpy(buf + buf_len, line, line_len);
+        buf_len += line_len;
+        buf[buf_len++] = '\n';
+        buf[buf_len] = '\0';
+        free(line);
+    }
+
+    pthread_mutex_unlock(&node->chain_lock);
+
+    ipc_send(msg->client_fd, MSG_SYNC_RESPONSE, (uint32_t)node->node_id,
+              buf, (uint32_t)buf_len);
+    logger_log(node->log_file, "node", node->node_id,
+               "sync request answered from index %llu", from_index);
+    free(buf);
+}
+
+
 static void handle_message(node_t *node, queue_message_t *msg) {
     printf("node %d: worker handling message type=%u sender=%u payload_len=%u\n",
            node->node_id, msg->header.type, msg->header.sender_id,
@@ -311,6 +375,9 @@ static void handle_message(node_t *node, queue_message_t *msg) {
             break;
         case MSG_QUERY_BLOCK:
             handle_query_block(node, msg);
+            break;
+	case MSG_SYNC_REQUEST:
+            handle_sync_request(node, msg);
             break;
         default:
             ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
