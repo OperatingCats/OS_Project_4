@@ -13,6 +13,8 @@
 #include "errors.h"
 #include "node_queue.h"
 
+static void broadcast_commit(node_t *node, const block_t *committed);
+
 static void *receiver_main(void *arg) {
     node_t *node = (node_t *)arg;
 
@@ -110,10 +112,63 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
     logger_log(node->log_file, "node", node->node_id,
                "block %llu accepted and appended",
                (unsigned long long)proposed.index);
+    pthread_mutex_lock(&node->chain_lock);
+    const block_t *last_committed = blockchain_get_by_index(&node->chain, node->chain.count - 1);
+    if (last_committed != NULL) {
+        broadcast_commit(node, last_committed);
+    }
+    pthread_mutex_unlock(&node->chain_lock);
 
     /* TODO: broadcast MSG_BLOCK_COMMIT to other Nodes/Miners — next step */
 }
 
+
+
+#define MAX_PROBE_PEERS 16
+
+
+static void broadcast_commit(node_t *node, const block_t *committed) {
+    char *line = NULL;
+    if (block_to_csv(committed, &line) != PROJECT_OK || line == NULL) {
+        return;
+    }
+
+    for (int id = 0; id < MAX_PROBE_PEERS; id++) {
+        if (id == node->node_id) {
+            continue;
+        }
+        char peer_path[MAX_SOCKET_PATH_LEN];
+        if (ipc_build_socket_path(node->runtime_dir, NODE_SOCK_FORMAT, id,
+                                   peer_path, sizeof(peer_path)) != PROJECT_OK) {
+            continue;
+        }
+        int peer_fd;
+        if (ipc_connect(peer_path, &peer_fd) == PROJECT_OK) {
+            ipc_send(peer_fd, MSG_BLOCK_COMMIT, (uint32_t)node->node_id,
+                      line, (uint32_t)strlen(line));
+            ipc_close(peer_fd);
+        }
+    }
+
+    for (int id = 0; id < MAX_PROBE_PEERS; id++) {
+        char peer_path[MAX_SOCKET_PATH_LEN];
+        if (ipc_build_socket_path(node->runtime_dir, MINER_SOCK_FORMAT, id,
+                                   peer_path, sizeof(peer_path)) != PROJECT_OK) {
+            continue;
+        }
+        int peer_fd;
+        if (ipc_connect(peer_path, &peer_fd) == PROJECT_OK) {
+            ipc_send(peer_fd, MSG_BLOCK_COMMIT, (uint32_t)node->node_id,
+                      line, (uint32_t)strlen(line));
+            ipc_close(peer_fd);
+        }
+    }
+
+    free(line);
+    logger_log(node->log_file, "node", node->node_id,
+               "broadcast commit for block %llu",
+               (unsigned long long)committed->index);
+}
 
 static void handle_query_height(node_t *node, queue_message_t *msg) {
     pthread_mutex_lock(&node->chain_lock);
@@ -129,6 +184,7 @@ static void handle_query_height(node_t *node, queue_message_t *msg) {
     logger_log(node->log_file, "node", node->node_id,
                "query height answered: %llu", (unsigned long long)height);
 }
+
 
 
 static void handle_query_block(node_t *node, queue_message_t *msg) {
