@@ -16,6 +16,11 @@ IPC_TEST := $(BIN_DIR)/test_ipc
 BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
 BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
 MEMPOOL_TEST := $(BIN_DIR)/test_mempool
+PROPOSE_BLOCK_TEST := $(BIN_DIR)/test_propose_block
+QUERY_TEST := $(BIN_DIR)/test_query
+PROPOSE_VALID_BLOCK_TEST := $(BIN_DIR)/test_propose_valid_block
+PROPOSE_NEXT_BLOCK_TEST := $(BIN_DIR)/test_propose_next_block
+RELAY_COMMIT_TEST := $(BIN_DIR)/test_relay_commit
 BOOTSTRAP_BIN := $(BIN_DIR)/blockchain
 MINER_BIN := $(BIN_DIR)/miner
 CLIENT_BIN := $(BIN_DIR)/client
@@ -89,6 +94,33 @@ MEMPOOL_TEST_SOURCES := \
 	miner/mempool.c \
 	tests/test_mempool.c
 
+PROPOSE_BLOCK_TEST_SOURCES := \
+	common/errors.c \
+	common/ipc.c \
+	tests/test_propose_block.c
+QUERY_TEST_SOURCES := \
+	common/errors.c \
+	common/ipc.c \
+	tests/test_query.c
+PROPOSE_VALID_BLOCK_TEST_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/crypto.c \
+	common/ipc.c \
+	third_party/sha256/sha256.c \
+	tests/test_propose_valid_block.c
+PROPOSE_NEXT_BLOCK_TEST_SOURCES := \
+	common/errors.c \
+	common/block.c \
+	common/crypto.c \
+	common/ipc.c \
+	third_party/sha256/sha256.c \
+	tests/test_propose_next_block.c
+RELAY_COMMIT_TEST_SOURCES := \
+	common/errors.c \
+	common/ipc.c \
+	tests/test_relay_commit.c
+
 BOOTSTRAP_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
@@ -134,6 +166,11 @@ build: $(CRYPTO_TEST) \
 	$(BLOCK_LINK_TEST) \
 	$(BLOCKCHAIN_TEST) \
 	$(MEMPOOL_TEST) \
+	$(PROPOSE_BLOCK_TEST) \
+	$(QUERY_TEST) \
+	$(PROPOSE_VALID_BLOCK_TEST) \
+	$(PROPOSE_NEXT_BLOCK_TEST) \
+	$(RELAY_COMMIT_TEST) \
 	$(BOOTSTRAP_BIN) \
     $(MINER_BIN) \
     $(CLIENT_BIN) \
@@ -187,6 +224,31 @@ $(MEMPOOL_TEST): $(MEMPOOL_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MEMPOOL_TEST_SOURCES) \
 		-o $(MEMPOOL_TEST) -pthread
+
+$(PROPOSE_BLOCK_TEST): $(PROPOSE_BLOCK_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_BLOCK_TEST_SOURCES) \
+		-o $(PROPOSE_BLOCK_TEST)
+
+$(QUERY_TEST): $(QUERY_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(QUERY_TEST_SOURCES) \
+		-o $(QUERY_TEST)
+
+$(PROPOSE_VALID_BLOCK_TEST): $(PROPOSE_VALID_BLOCK_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_VALID_BLOCK_TEST_SOURCES) \
+		-o $(PROPOSE_VALID_BLOCK_TEST)
+
+$(PROPOSE_NEXT_BLOCK_TEST): $(PROPOSE_NEXT_BLOCK_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_NEXT_BLOCK_TEST_SOURCES) \
+		-o $(PROPOSE_NEXT_BLOCK_TEST)
+
+$(RELAY_COMMIT_TEST): $(RELAY_COMMIT_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(RELAY_COMMIT_TEST_SOURCES) \
+		-o $(RELAY_COMMIT_TEST)
 
 $(BOOTSTRAP_BIN): $(BOOTSTRAP_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
