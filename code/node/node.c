@@ -87,6 +87,8 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
         block_destroy(&proposed);
         ipc_send(msg->client_fd, MSG_BLOCK_REJECT, (uint32_t)node->node_id,
                  "invalid proposal", 17);
+	logger_log(node->log_file, "node", node->node_id,
+                   "block proposal rejected: invalid proposal");
         return;
     }
 
@@ -98,11 +100,16 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
     if (rc != PROJECT_OK) {
         ipc_send(msg->client_fd, MSG_BLOCK_REJECT, (uint32_t)node->node_id,
                  "append failed", 14);
+	logger_log(node->log_file, "node", node->node_id,
+                   "block proposal rejected: append failed");
         return;
     }
 
     ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id, NULL, 0);
     printf("node %d: block accepted and appended\n", node->node_id);
+    logger_log(node->log_file, "node", node->node_id,
+               "block %llu accepted and appended",
+               (unsigned long long)proposed.index);
 
     /* TODO: broadcast MSG_BLOCK_COMMIT to other Nodes/Miners — next step */
 }
@@ -214,6 +221,7 @@ int node_init(node_t *node, int node_id, const char *runtime_dir) {
     memset(node, 0, sizeof(*node));
     node->node_id = node_id;
     node->is_coordinator = (node_id == 0);
+    node->log_file = logger_init(runtime_dir, "node", node_id);
     strncpy(node->runtime_dir, runtime_dir, sizeof(node->runtime_dir) - 1);
 
     int rc = ipc_build_socket_path(runtime_dir, NODE_SOCK_FORMAT, node_id,
@@ -299,6 +307,7 @@ void node_destroy(node_t *node) {
     if (node == NULL) {
         return;
     }
+    logger_close(node->log_file);
     node_queue_destroy(&node->queue);
     pthread_mutex_destroy(&node->chain_lock);
     blockchain_destroy(&node->chain);

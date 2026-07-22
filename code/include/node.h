@@ -4,7 +4,7 @@
 #include <pthread.h>
 #include "blockchain.h"
 #include "node_queue.h"
-
+#include "logger.h"
 #define NODE_WORKER_COUNT 4
 
 typedef struct {
@@ -14,6 +14,7 @@ typedef struct {
     char sock_path[MAX_SOCKET_PATH_LEN];
 
     int server_fd;
+    FILE *log_file;
 
     blockchain_t chain;
     pthread_mutex_t chain_lock;
