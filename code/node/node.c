@@ -176,7 +176,10 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
                (unsigned long long)accepted_index);
 }
 
-
+/* We don't know the real number of nodes/miners (Bootstrap doesn't pass
+ * it to us), so we just try ids 0-15 and skip any that don't exist.
+ * Fine for any normal test/demo size; if we ever ran more than 16 nodes
+ * or 16 miners, the extras wouldn't get broadcasts. */
 #define MAX_PROBE_PEERS 16
 
 
