@@ -200,6 +200,8 @@ static void resync_from_node(miner_state_t *state)
         block_t last_block;
         char last_hash[SHA256_HEX_STRING_SIZE];
 
+        block_init(&last_block);
+
         snprintf(query_args, sizeof(query_args), "--index %ld", height - 1);
 
         response = NULL;
@@ -354,6 +356,8 @@ static void handle_block_commit(
 
     memcpy(line, payload, payload_len);
     line[payload_len] = '\0';
+
+    block_init(&block);
 
     if (block_from_csv(line, &block) != PROJECT_OK) {
         free(line);

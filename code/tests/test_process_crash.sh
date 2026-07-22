@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Verifies Bootstrap notices a dead child and keeps running instead of
-# hanging. An exec() failure from a missing binary stands in for a crash
-# here; Bootstrap sees the same "child exited" signal either way.
+# hanging. Kills a real running Miner with SIGKILL to simulate a crash,
+# rather than relying on a missing binary causing an exec() failure --
+# that stand-in only worked back when the Miner binary genuinely didn't
+# exist yet, and stopped meaning anything once the project actually builds.
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,10 +25,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$BOOTSTRAP_BIN" 1 0 0 <&3 >"$OUT_LOG" 2>&1 &
+"$BOOTSTRAP_BIN" 1 1 0 <&3 >"$OUT_LOG" 2>&1 &
 BOOTSTRAP_PID=$!
 
-# Give the child time to spawn and exit.
+sleep 1
+
+if ! kill -0 "$BOOTSTRAP_PID" 2>/dev/null; then
+    echo "FAIL: bootstrap exited immediately"
+    cat "$OUT_LOG"
+    exit 1
+fi
+
+echo "status" >&3
+sleep 1
+
+MINER_PID="$(awk '$1 == "MINER" {print $3; exit}' "$OUT_LOG")"
+
+if [ -z "$MINER_PID" ]; then
+    echo "FAIL: could not read the miner's PID from the status table"
+    cat "$OUT_LOG"
+    kill -9 "$BOOTSTRAP_PID" 2>/dev/null
+    exit 1
+fi
+
+echo "killing miner (pid $MINER_PID) to simulate a crash"
+kill -9 "$MINER_PID" 2>/dev/null
+
+# Give SIGCHLD time to interrupt bootstrap's fgets() and reap the child.
 sleep 2
 
 echo "status" >&3
