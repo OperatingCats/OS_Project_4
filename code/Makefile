@@ -2,6 +2,7 @@ CC := gcc
 
 CPPFLAGS := -Iinclude -Ithird_party/sha256
 CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror
+PTHREAD_FLAGS := -pthread
 
 BUILD_DIR := build
 BIN_DIR := bin
@@ -16,11 +17,13 @@ IPC_TEST := $(BIN_DIR)/test_ipc
 BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
 BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
 MEMPOOL_TEST := $(BIN_DIR)/test_mempool
+
 PROPOSE_BLOCK_TEST := $(BIN_DIR)/test_propose_block
 QUERY_TEST := $(BIN_DIR)/test_query
 PROPOSE_VALID_BLOCK_TEST := $(BIN_DIR)/test_propose_valid_block
 PROPOSE_NEXT_BLOCK_TEST := $(BIN_DIR)/test_propose_next_block
 RELAY_COMMIT_TEST := $(BIN_DIR)/test_relay_commit
+
 BOOTSTRAP_BIN := $(BIN_DIR)/blockchain
 MINER_BIN := $(BIN_DIR)/miner
 CLIENT_BIN := $(BIN_DIR)/client
@@ -72,6 +75,7 @@ IPC_TEST_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
 	tests/test_ipc.c
+
 BLOCK_LINK_TEST_SOURCES := \
 	common/errors.c \
 	common/block.c \
@@ -98,10 +102,12 @@ PROPOSE_BLOCK_TEST_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
 	tests/test_propose_block.c
+
 QUERY_TEST_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
 	tests/test_query.c
+
 PROPOSE_VALID_BLOCK_TEST_SOURCES := \
 	common/errors.c \
 	common/block.c \
@@ -109,6 +115,7 @@ PROPOSE_VALID_BLOCK_TEST_SOURCES := \
 	common/ipc.c \
 	third_party/sha256/sha256.c \
 	tests/test_propose_valid_block.c
+
 PROPOSE_NEXT_BLOCK_TEST_SOURCES := \
 	common/errors.c \
 	common/block.c \
@@ -116,6 +123,7 @@ PROPOSE_NEXT_BLOCK_TEST_SOURCES := \
 	common/ipc.c \
 	third_party/sha256/sha256.c \
 	tests/test_propose_next_block.c
+
 RELAY_COMMIT_TEST_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
@@ -135,28 +143,27 @@ MINER_SOURCES := \
 	common/ipc.c \
 	third_party/sha256/sha256.c \
 	miner/mempool.c \
-	miner/miner.c 
+	miner/miner.c
 
 CLIENT_SOURCES := \
-     common/errors.c \
-     common/ipc.c \
-     client/client.c
+	common/errors.c \
+	common/ipc.c \
+	client/client.c
 
 NODE_SOURCES := \
-    common/errors.c \
-    common/block.c \
-    common/blockchain.c \
-    common/crypto.c \
-    common/validation.c \
-    common/ipc.c \
-    common/node_queue.c \
-    common/logger.c \
-    third_party/sha256/sha256.c \
-    node/node.c
+	common/errors.c \
+	common/block.c \
+	common/blockchain.c \
+	common/crypto.c \
+	common/validation.c \
+	common/ipc.c \
+	common/node_queue.c \
+	common/logger.c \
+	third_party/sha256/sha256.c \
+	node/node.c
 
-.PHONY: build test clean run
-
-build: $(CRYPTO_TEST) \
+ALL_TEST_BINARIES := \
+	$(CRYPTO_TEST) \
 	$(BLOCK_TEST) \
 	$(MERKLE_TEST) \
 	$(VALIDATION_TEST) \
@@ -170,107 +177,97 @@ build: $(CRYPTO_TEST) \
 	$(QUERY_TEST) \
 	$(PROPOSE_VALID_BLOCK_TEST) \
 	$(PROPOSE_NEXT_BLOCK_TEST) \
-	$(RELAY_COMMIT_TEST) \
+	$(RELAY_COMMIT_TEST)
+
+ALL_PROGRAMS := \
 	$(BOOTSTRAP_BIN) \
-    $(MINER_BIN) \
-    $(CLIENT_BIN) \
+	$(MINER_BIN) \
+	$(CLIENT_BIN) \
 	$(NODE_BIN)
+
+.PHONY: build test test-c test-shell clean run
+
+build: $(ALL_TEST_BINARIES) $(ALL_PROGRAMS)
 
 $(CRYPTO_TEST): $(CRYPTO_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(CRYPTO_TEST_SOURCES) \
-		-o $(CRYPTO_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(CRYPTO_TEST_SOURCES) -o $@
 
 $(BLOCK_TEST): $(BLOCK_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_TEST_SOURCES) \
-		-o $(BLOCK_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_TEST_SOURCES) -o $@
 
 $(MERKLE_TEST): $(MERKLE_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(MERKLE_TEST_SOURCES) \
-		-o $(MERKLE_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(MERKLE_TEST_SOURCES) -o $@
 
 $(VALIDATION_TEST): $(VALIDATION_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(VALIDATION_TEST_SOURCES) \
-		-o $(VALIDATION_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(VALIDATION_TEST_SOURCES) -o $@
 
 $(BLOCK_HASH_TEST): $(BLOCK_HASH_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_HASH_TEST_SOURCES) \
-		-o $(BLOCK_HASH_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_HASH_TEST_SOURCES) -o $@
 
 $(BLOCK_VALIDATION_TEST): $(BLOCK_VALIDATION_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_VALIDATION_TEST_SOURCES) \
-		-o $(BLOCK_VALIDATION_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_VALIDATION_TEST_SOURCES) -o $@
 
 $(IPC_TEST): $(IPC_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(IPC_TEST_SOURCES) \
-		-o $(IPC_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(IPC_TEST_SOURCES) -o $@
+
 $(BLOCK_LINK_TEST): $(BLOCK_LINK_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_LINK_TEST_SOURCES) \
-		-o $(BLOCK_LINK_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCK_LINK_TEST_SOURCES) -o $@
 
 $(BLOCKCHAIN_TEST): $(BLOCKCHAIN_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCKCHAIN_TEST_SOURCES) \
-		-o $(BLOCKCHAIN_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCKCHAIN_TEST_SOURCES) -o $@
 
 $(MEMPOOL_TEST): $(MEMPOOL_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MEMPOOL_TEST_SOURCES) \
-		-o $(MEMPOOL_TEST) -pthread
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PTHREAD_FLAGS) $(MEMPOOL_TEST_SOURCES) -o $@ $(PTHREAD_FLAGS)
 
 $(PROPOSE_BLOCK_TEST): $(PROPOSE_BLOCK_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_BLOCK_TEST_SOURCES) \
-		-o $(PROPOSE_BLOCK_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_BLOCK_TEST_SOURCES) -o $@
 
 $(QUERY_TEST): $(QUERY_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(QUERY_TEST_SOURCES) \
-		-o $(QUERY_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(QUERY_TEST_SOURCES) -o $@
 
 $(PROPOSE_VALID_BLOCK_TEST): $(PROPOSE_VALID_BLOCK_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_VALID_BLOCK_TEST_SOURCES) \
-		-o $(PROPOSE_VALID_BLOCK_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_VALID_BLOCK_TEST_SOURCES) -o $@
 
 $(PROPOSE_NEXT_BLOCK_TEST): $(PROPOSE_NEXT_BLOCK_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_NEXT_BLOCK_TEST_SOURCES) \
-		-o $(PROPOSE_NEXT_BLOCK_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PROPOSE_NEXT_BLOCK_TEST_SOURCES) -o $@
 
 $(RELAY_COMMIT_TEST): $(RELAY_COMMIT_TEST_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(RELAY_COMMIT_TEST_SOURCES) \
-		-o $(RELAY_COMMIT_TEST)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(RELAY_COMMIT_TEST_SOURCES) -o $@
 
 $(BOOTSTRAP_BIN): $(BOOTSTRAP_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BOOTSTRAP_SOURCES) \
-		-o $(BOOTSTRAP_BIN)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BOOTSTRAP_SOURCES) -o $@
 
 $(MINER_BIN): $(MINER_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MINER_SOURCES) \
-		-o $(MINER_BIN) -pthread
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PTHREAD_FLAGS) $(MINER_SOURCES) -o $@ $(PTHREAD_FLAGS)
 
 $(CLIENT_BIN): $(CLIENT_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(CLIENT_SOURCES) \
-	        -o $(CLIENT_BIN)
-	
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(CLIENT_SOURCES) -o $@
+
 $(NODE_BIN): $(NODE_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(NODE_SOURCES) \
-		-o $(NODE_BIN) -pthread
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PTHREAD_FLAGS) $(NODE_SOURCES) -o $@ $(PTHREAD_FLAGS)
 
-test: build
+test: test-c test-shell
+
+test-c: build
 	./$(CRYPTO_TEST)
 	./$(BLOCK_TEST)
 	./$(MERKLE_TEST)
@@ -282,10 +279,14 @@ test: build
 	./$(BLOCKCHAIN_TEST)
 	./$(MEMPOOL_TEST)
 
-run: $(BOOTSTRAP_BIN)
+test-shell: build
+	bash tests/run_all_tests.sh
+
+run: build
 	./$(BOOTSTRAP_BIN) $(ARGS)
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
-	bash scripts/cleanup.sh
-
+	@if [ -f scripts/cleanup.sh ]; then \
+		bash scripts/cleanup.sh; \
+	fi
