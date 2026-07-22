@@ -107,6 +107,60 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
     /* TODO: broadcast MSG_BLOCK_COMMIT to other Nodes/Miners — next step */
 }
 
+static void handle_query_chain(node_t *node, queue_message_t *msg) {
+    pthread_mutex_lock(&node->chain_lock);
+
+    if (node->chain.count == 0) {
+        pthread_mutex_unlock(&node->chain_lock);
+        ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id, NULL, 0);
+        return;
+    }
+
+    size_t buf_capacity = 4096;
+    char *buf = malloc(buf_capacity);
+    size_t buf_len = 0;
+    if (buf == NULL) {
+        pthread_mutex_unlock(&node->chain_lock);
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "out of memory", 13);
+        return;
+    }
+    buf[0] = '\0';
+
+    for (size_t i = 0; i < node->chain.count; i++) {
+        char *line = NULL;
+        int rc = block_to_csv(&node->chain.blocks[i], &line);
+        if (rc != PROJECT_OK || line == NULL) {
+            continue;
+        }
+        size_t line_len = strlen(line);
+        while (buf_len + line_len + 2 > buf_capacity) {
+            buf_capacity *= 2;
+            char *grown = realloc(buf, buf_capacity);
+            if (grown == NULL) {
+                free(buf);
+                free(line);
+                pthread_mutex_unlock(&node->chain_lock);
+                ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                         "out of memory", 13);
+                return;
+            }
+            buf = grown;
+        }
+        memcpy(buf + buf_len, line, line_len);
+        buf_len += line_len;
+        buf[buf_len++] = '\n';
+        buf[buf_len] = '\0';
+        free(line);
+    }
+
+    pthread_mutex_unlock(&node->chain_lock);
+
+    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
+              buf, (uint32_t)buf_len);
+    free(buf);
+}
+
 static void handle_message(node_t *node, queue_message_t *msg) {
     printf("node %d: worker handling message type=%u sender=%u payload_len=%u\n",
            node->node_id, msg->header.type, msg->header.sender_id,
@@ -120,6 +174,9 @@ static void handle_message(node_t *node, queue_message_t *msg) {
                 ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
                          "not coordinator", 16);
             }
+            break;
+	    case MSG_QUERY_CHAIN:
+            handle_query_chain(node, msg);
             break;
         default:
             ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
@@ -176,6 +233,19 @@ int node_init(node_t *node, int node_id, const char *runtime_dir) {
     if (rc != PROJECT_OK) {
         ipc_close(node->server_fd);
         return rc;
+    }
+    char genesis_path[300];
+    int written = snprintf(genesis_path, sizeof(genesis_path),
+                            "%s/initial_state.csv", runtime_dir);
+    if (written > 0 && (size_t)written < sizeof(genesis_path)) {
+        int load_rc = blockchain_load_csv(&node->chain, genesis_path);
+        if (load_rc == PROJECT_OK) {
+            printf("node %d: loaded genesis state from %s (%zu block(s))\n",
+                   node_id, genesis_path, node->chain.count);
+        } else {
+            printf("node %d: no genesis state loaded from %s (err %d)\n",
+                   node_id, genesis_path, load_rc);
+        }
     }
     pthread_mutex_init(&node->chain_lock, NULL);
 
