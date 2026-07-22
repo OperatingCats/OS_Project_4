@@ -96,6 +96,7 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
              && validate_block_merkle_root(&proposed) == PROJECT_OK
              && (last == NULL || validate_block_link(last, &proposed) == PROJECT_OK);
 
+
     if (!valid) {
         pthread_mutex_unlock(&node->chain_lock);
         block_destroy(&proposed);
