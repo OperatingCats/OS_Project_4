@@ -15,6 +15,7 @@ BLOCK_VALIDATION_TEST := $(BIN_DIR)/test_block_validation
 IPC_TEST := $(BIN_DIR)/test_ipc
 BLOCK_LINK_TEST := $(BIN_DIR)/test_block_link
 BLOCKCHAIN_TEST := $(BIN_DIR)/test_blockchain
+MEMPOOL_TEST := $(BIN_DIR)/test_mempool
 BOOTSTRAP_BIN := $(BIN_DIR)/blockchain
 MINER_BIN := $(BIN_DIR)/miner
 CLIENT_BIN := $(BIN_DIR)/client
@@ -83,6 +84,11 @@ BLOCKCHAIN_TEST_SOURCES := \
 	third_party/sha256/sha256.c \
 	tests/test_blockchain.c
 
+MEMPOOL_TEST_SOURCES := \
+	common/errors.c \
+	miner/mempool.c \
+	tests/test_mempool.c
+
 BOOTSTRAP_SOURCES := \
 	common/errors.c \
 	common/ipc.c \
@@ -127,6 +133,7 @@ build: $(CRYPTO_TEST) \
 	$(IPC_TEST) \
 	$(BLOCK_LINK_TEST) \
 	$(BLOCKCHAIN_TEST) \
+	$(MEMPOOL_TEST) \
 	$(BOOTSTRAP_BIN) \
     $(MINER_BIN) \
     $(CLIENT_BIN) \
@@ -176,6 +183,11 @@ $(BLOCKCHAIN_TEST): $(BLOCKCHAIN_TEST_SOURCES)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(BLOCKCHAIN_TEST_SOURCES) \
 		-o $(BLOCKCHAIN_TEST)
 
+$(MEMPOOL_TEST): $(MEMPOOL_TEST_SOURCES)
+	mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -pthread $(MEMPOOL_TEST_SOURCES) \
+		-o $(MEMPOOL_TEST) -pthread
+
 $(BOOTSTRAP_BIN): $(BOOTSTRAP_SOURCES)
 	mkdir -p $(BUILD_DIR) $(BIN_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(BOOTSTRAP_SOURCES) \
@@ -206,10 +218,12 @@ test: build
 	./$(IPC_TEST)
 	./$(BLOCK_LINK_TEST)
 	./$(BLOCKCHAIN_TEST)
+	./$(MEMPOOL_TEST)
 
 run: $(BOOTSTRAP_BIN)
 	./$(BOOTSTRAP_BIN) $(ARGS)
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
+	bash scripts/cleanup.sh
 

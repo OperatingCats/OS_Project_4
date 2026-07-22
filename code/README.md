@@ -24,11 +24,80 @@ make run
 
 ## Command-line options
 
-TODO: document the options for `bootstrap`, `node`, `miner`, `client`.
+### `bootstrap` (built as `bin/blockchain`)
+
+```
+./bin/blockchain <num_nodes> <num_miners> <num_clients> [transaction_frequency] [difficulty] [initial_state.csv]
+```
+
+- `num_nodes`, `num_miners`, `num_clients`: how many of each process to spawn.
+  At least one node is required.
+- `transaction_frequency` (optional, default `0`): seconds between each
+  client's automatically generated transactions. `0` disables automatic
+  generation, the client stays alive and idle.
+- `difficulty` (optional, default `4`): denominator of a miner's per-attempt
+  mining probability, e.g. `4` means a 1-in-4 chance each sleep cycle.
+- `initial_state.csv` (optional): a blockchain CSV file to seed every node
+  with at startup. If omitted, all nodes start from an empty chain.
+
+Example: `./bin/blockchain 3 2 1 5 3 data/initial_state.csv`.
+
+Once running, bootstrap accepts these commands on its interactive prompt:
+
+| Command | Effect |
+|---|---|
+| `submit "<transaction>"` | Sends a transaction to one of the miners (round-robin). |
+| `request blockchain [--index <n> \| --hash <h>]` | Requests the chain from node 0, optionally starting from a given block. |
+| `request block --index <n>` | Requests one block by index. |
+| `request block --hash <h>` | Requests one block by hash. |
+| `save blockchain <filename>` | Saves the current chain to a CSV file. |
+| `pause` / `resume` | Suspends/resumes every child process (`SIGSTOP`/`SIGCONT`). |
+| `status` | Prints the process table (type, id, pid, state). |
+| `stop` | Shuts down every child process and removes the runtime directory. |
+
+### `node` (built as `bin/node`)
+
+```
+./bin/node <node_id> <runtime_dir>
+```
+
+Not meant to be run directly, bootstrap spawns one per `num_nodes` with these
+arguments. `node_id 0` is always the consensus coordinator.
+
+### `miner` (built as `bin/miner`)
+
+```
+./bin/miner <miner_id> <runtime_dir> <difficulty>
+```
+
+Spawned by bootstrap, one per `num_miners`, inheriting the difficulty passed
+to bootstrap.
+
+### `client` (built as `bin/client`)
+
+```
+./bin/client <client_id> <runtime_dir> <transaction_frequency>
+```
+
+Spawned by bootstrap, one per `num_clients`, inheriting the transaction
+frequency passed to bootstrap.
 
 ## Example scenario
 
-TODO: describe a demo scenario (see `scripts/demo.sh`).
+`scripts/demo.sh` runs a full scenario end to end: start the system from
+`data/initial_state.csv`, submit transactions and wait for a block to be
+mined, query the chain by index and by hash, pause and resume the system,
+simulate a miner crash and confirm the rest keeps running, save and verify
+the resulting chain with `bash/blockchain.sh --verify`, then shut down
+cleanly. Run it with:
+
+```bash
+bash scripts/demo.sh
+```
+
+`scripts/demo_cheatsheet.md` has the same scenario broken into the exact
+commands to type live, grouped by who's driving each phase, for walking
+through it by hand during the presentation instead of running the script.
 
 ## Running tests
 
