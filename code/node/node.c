@@ -114,6 +114,71 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
     /* TODO: broadcast MSG_BLOCK_COMMIT to other Nodes/Miners — next step */
 }
 
+
+static void handle_query_height(node_t *node, queue_message_t *msg) {
+    pthread_mutex_lock(&node->chain_lock);
+    uint64_t height = (uint64_t)node->chain.count;
+    pthread_mutex_unlock(&node->chain_lock);
+
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%llu", (unsigned long long)height);
+
+    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
+              buf, (uint32_t)len);
+
+    logger_log(node->log_file, "node", node->node_id,
+               "query height answered: %llu", (unsigned long long)height);
+}
+
+
+static void handle_query_block(node_t *node, queue_message_t *msg) {
+    /* payload format: "--index <n>" or "--hash <h>" */
+    char *payload_str = malloc(msg->header.payload_len + 1);
+    if (payload_str == NULL) {
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "out of memory", 13);
+        return;
+    }
+    memcpy(payload_str, msg->payload, msg->header.payload_len);
+    payload_str[msg->header.payload_len] = '\0';
+
+    pthread_mutex_lock(&node->chain_lock);
+
+    const block_t *found = NULL;
+    unsigned long long idx;
+    char hash[SHA256_HEX_STRING_SIZE];
+
+    if (sscanf(payload_str, "--index %llu", &idx) == 1) {
+        found = blockchain_get_by_index(&node->chain, (uint64_t)idx);
+    } else if (sscanf(payload_str, "--hash %64s", hash) == 1) {
+        found = blockchain_get_by_hash(&node->chain, hash);
+    }
+
+    if (found == NULL) {
+        pthread_mutex_unlock(&node->chain_lock);
+        free(payload_str);
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "block not found", 16);
+        return;
+    }
+
+    char *line = NULL;
+    int rc = block_to_csv(found, &line);
+    pthread_mutex_unlock(&node->chain_lock);
+    free(payload_str);
+
+    if (rc != PROJECT_OK || line == NULL) {
+        ipc_send(msg->client_fd, MSG_RESPONSE_ERR, (uint32_t)node->node_id,
+                 "serialization failed", 21);
+        return;
+    }
+
+    ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
+              line, (uint32_t)strlen(line));
+    logger_log(node->log_file, "node", node->node_id, "query block answered");
+    free(line);
+}
+
 static void handle_query_chain(node_t *node, queue_message_t *msg) {
     pthread_mutex_lock(&node->chain_lock);
 
@@ -182,8 +247,14 @@ static void handle_message(node_t *node, queue_message_t *msg) {
                          "not coordinator", 16);
             }
             break;
-	    case MSG_QUERY_CHAIN:
+	case MSG_QUERY_CHAIN:
             handle_query_chain(node, msg);
+            break;
+	case MSG_QUERY_HEIGHT:
+            handle_query_height(node, msg);
+            break;
+        case MSG_QUERY_BLOCK:
+            handle_query_block(node, msg);
             break;
         default:
             ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
