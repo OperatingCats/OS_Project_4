@@ -12,6 +12,16 @@
 #include "ipc.h"
 #include "errors.h"
 #include "node_queue.h"
+#include <signal.h>
+
+static node_t *g_node_for_signal = NULL;
+
+static void handle_termination_signal(int signum) {
+    (void)signum;
+    if (g_node_for_signal != NULL) {
+        node_stop(g_node_for_signal);
+    }
+}
 
 static void broadcast_commit(node_t *node, const block_t *committed);
 static void handle_sync_request(node_t *node, queue_message_t *msg);
@@ -120,8 +130,6 @@ static void handle_block_proposal(node_t *node, queue_message_t *msg) {
         broadcast_commit(node, last_committed);
     }
     pthread_mutex_unlock(&node->chain_lock);
-
-    /* TODO: broadcast MSG_BLOCK_COMMIT to other Nodes/Miners — next step */
 }
 
 
@@ -453,6 +461,8 @@ static void handle_block_commit(node_t *node, queue_message_t *msg) {
     ipc_close(fd);
 }
 
+
+
 static void handle_message(node_t *node, queue_message_t *msg) {
     printf("node %d: worker handling message type=%u sender=%u payload_len=%u\n",
            node->node_id, msg->header.type, msg->header.sender_id,
@@ -509,6 +519,8 @@ static void *worker_main(void *arg) {
     }
     return NULL;
 }
+
+
 
 int node_init(node_t *node, int node_id, const char *runtime_dir) {
     if (node == NULL || runtime_dir == NULL) {
@@ -624,6 +636,13 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "node: init failed (err %d)\n", rc);
         return EXIT_FAILURE;
     }
+
+    g_node_for_signal = &node;
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = handle_termination_signal;
+    sigaction(SIGTERM, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
 
     rc = node_run(&node);
 
