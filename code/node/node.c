@@ -15,6 +15,7 @@
 
 static void broadcast_commit(node_t *node, const block_t *committed);
 static void handle_sync_request(node_t *node, queue_message_t *msg);
+static void handle_block_commit(node_t *node, queue_message_t *msg);
 
 static void *receiver_main(void *arg) {
     node_t *node = (node_t *)arg;
@@ -353,6 +354,105 @@ static void handle_sync_request(node_t *node, queue_message_t *msg) {
 }
 
 
+
+static void handle_block_commit(node_t *node, queue_message_t *msg) {
+    char *line = malloc(msg->header.payload_len + 1);
+    if (line == NULL) {
+        return;
+    }
+    memcpy(line, msg->payload, msg->header.payload_len);
+    line[msg->header.payload_len] = '\0';
+
+    block_t incoming;
+    block_init(&incoming);
+    int rc = block_from_csv(line, &incoming);
+    free(line);
+    if (rc != PROJECT_OK) {
+        return;
+    }
+
+    pthread_mutex_lock(&node->chain_lock);
+    uint64_t expected_index = (uint64_t)node->chain.count;
+
+    if (incoming.index == expected_index) {
+        /* the next block: validate and append directly. */
+        const block_t *last = (node->chain.count > 0)
+            ? blockchain_get_by_index(&node->chain, node->chain.count - 1)
+            : NULL;
+        int valid = validate_block_structure(&incoming) == PROJECT_OK
+                 && validate_block_merkle_root(&incoming) == PROJECT_OK
+                 && (last == NULL || validate_block_link(last, &incoming) == PROJECT_OK);
+        if (valid) {
+            blockchain_append(&node->chain, &incoming);
+            logger_log(node->log_file, "node", node->node_id,
+                       "block %llu committed via broadcast",
+                       (unsigned long long)incoming.index);
+        }
+        pthread_mutex_unlock(&node->chain_lock);
+        block_destroy(&incoming);
+        return;
+    }
+
+    if (incoming.index < expected_index) {
+        /* Old/duplicate ignore. */
+        pthread_mutex_unlock(&node->chain_lock);
+        block_destroy(&incoming);
+        logger_log(node->log_file, "node", node->node_id,
+                   "duplicate/old block %llu ignored",
+                   (unsigned long long)incoming.index);
+        return;
+    }
+
+    /* incoming.index > expected_index: behind, need to sync. */
+    pthread_mutex_unlock(&node->chain_lock);
+    block_destroy(&incoming);
+
+    char coordinator_path[MAX_SOCKET_PATH_LEN];
+    if (ipc_build_socket_path(node->runtime_dir, NODE_SOCK_FORMAT, 0,
+                               coordinator_path, sizeof(coordinator_path)) != PROJECT_OK) {
+        return;
+    }
+
+    int fd;
+    if (ipc_connect(coordinator_path, &fd) != PROJECT_OK) {
+        return;
+    }
+
+    char request[32];
+    int req_len = snprintf(request, sizeof(request), "%llu",
+                            (unsigned long long)expected_index);
+    ipc_send(fd, MSG_SYNC_REQUEST, (uint32_t)node->node_id, request, (uint32_t)req_len);
+
+    message_header_t sync_header;
+    void *sync_payload = NULL;
+    if (ipc_recv(fd, &sync_header, &sync_payload) == PROJECT_OK && sync_payload != NULL) {
+        char *sync_str = malloc(sync_header.payload_len + 1);
+        if (sync_str != NULL) {
+            memcpy(sync_str, sync_payload, sync_header.payload_len);
+            sync_str[sync_header.payload_len] = '\0';
+
+            char *saveptr = NULL;
+            char *line_tok = strtok_r(sync_str, "\n", &saveptr);
+            pthread_mutex_lock(&node->chain_lock);
+            while (line_tok != NULL) {
+                block_t synced;
+                block_init(&synced);
+                if (block_from_csv(line_tok, &synced) == PROJECT_OK) {
+                    blockchain_append(&node->chain, &synced);
+                }
+                block_destroy(&synced);
+                line_tok = strtok_r(NULL, "\n", &saveptr);
+            }
+            pthread_mutex_unlock(&node->chain_lock);
+            free(sync_str);
+
+            logger_log(node->log_file, "node", node->node_id, "recovery completed");
+        }
+        free(sync_payload);
+    }
+    ipc_close(fd);
+}
+
 static void handle_message(node_t *node, queue_message_t *msg) {
     printf("node %d: worker handling message type=%u sender=%u payload_len=%u\n",
            node->node_id, msg->header.type, msg->header.sender_id,
@@ -378,6 +478,9 @@ static void handle_message(node_t *node, queue_message_t *msg) {
             break;
 	case MSG_SYNC_REQUEST:
             handle_sync_request(node, msg);
+            break;
+	case MSG_BLOCK_COMMIT:
+            handle_block_commit(node, msg);
             break;
         default:
             ipc_send(msg->client_fd, MSG_RESPONSE_OK, (uint32_t)node->node_id,
